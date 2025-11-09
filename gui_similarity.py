@@ -4,14 +4,18 @@
 #   - Cosine Similarity (Centered, Masked)
 #   - Frobenius Norm Distance (Masked)
 #   - Patch-wise Cosine Similarity (Masked, Z-Score)
+#   - Patch-wise Cosine + Translation (Masked, Z-Score)   [new: small-shift robust]
 #   - PCA Projection Cosine Similarity
 #   - SVD Spectral + Directional Similarity
 #   - Normalized Cross-Correlation (NCC)
 #
-# Always-on defaults (no auto heuristics, no hidden weights):
-#   - Sobel edge images
-#   - Zero-mean centering
-#   - Foreground mask (threshold) + auto-crop to mask bbox
+# Fixed, explicit pipeline (no hidden auto-weights):
+#   1) Read grayscale
+#   2) Resize to N x N
+#   3) Foreground mask by threshold (each image)
+#   4) Joint crop using INTERSECTION of masks (same bbox for both)
+#   5) Sobel edges
+#   6) Compute selected metric on the SAME region and SAME mask
 
 import math
 import tkinter as tk
@@ -24,10 +28,7 @@ EPS = 1e-9
 # ---------------- LA helpers ----------------
 def l2(v): return float(np.sqrt((v*v).sum() + EPS))
 def dot(a,b): return float(a.dot(b))
-
-def cos_to_pct(s):
-    # Map cosine [-1,1] -> [0,100] with 0 correlation -> 0%.
-    return 100.0 * max(0.0, float(s))
+def cos_to_pct(s): return 100.0 * max(0.0, float(s))  # 0 corr -> 0%
 
 def zscore(v):
     m = float(v.mean()); s = float(v.std() + EPS)
@@ -70,9 +71,9 @@ def sobel_mag(img):
 
 # ---------------- Masking & cropping ----------------
 def auto_mask(img, thr=0.95):
-    return (img < float(thr))
+    return (img < float(thr))  # foreground darker than threshold
 
-def bbox_from_mask(mask, margin=3):
+def bbox_from_mask(mask, margin=2):
     ys, xs = np.where(mask)
     if ys.size == 0: return (0,0,mask.shape[1],mask.shape[0])
     y0,y1 = max(0,int(ys.min()-margin)), min(mask.shape[0], int(ys.max()+1+margin))
@@ -118,6 +119,21 @@ def patchcos_masked(A,B,M, patch=16, stride=8, min_cov=0.1):
     if not S: return 0.0
     return cos_to_pct(float(np.mean(S)))
 
+def patchcos_shifted(A,B,MA,MB, patch=16, stride=8, min_cov=0.1, max_shift=8):
+    # maximize patchcos over small translations; use INTERSECTION mask per shift
+    H,W = A.shape
+    best = 0.0
+    for dy in range(-max_shift, max_shift+1):
+        for dx in range(-max_shift, max_shift+1):
+            y0a=max(0,dy); y1a=min(H,H+dy); x0a=max(0,dx); x1a=min(W,W+dx)
+            y0b=max(0,-dy);y1b=min(H,H-dy);x0b=max(0,-dx);x1b=min(W,W-dx)
+            if y1a-y0a<=0 or x1a-x0a<=0: continue
+            Aov = A[y0a:y1a, x0a:x1a]; Bov = B[y0b:y1b, x0b:x1b]
+            M = (MA[y0a:y1a, x0a:x1a] & MB[y0b:y1b, x0b:x1b])
+            s = patchcos_masked(Aov, Bov, M, patch=patch, stride=stride, min_cov=min_cov)
+            if s > best: best = s
+    return best
+
 def pca_cosine(A,B,M,k=20):
     va, vb = apply_mask_flat(A,M,True), apply_mask_flat(B,M,True)
     if va.shape == vb.shape and float(np.linalg.norm(va - vb)) < 1e-8:
@@ -146,17 +162,14 @@ def pca_cosine(A,B,M,k=20):
     return cos_to_pct(dot(ak,bk)/(na*nb))
 
 def svd_energy(A,B,M,k=20):
-    # crop to mask bbox so background doesn't dominate
     bbox = bbox_from_mask(M); A = crop_to_bbox(A,bbox); B = crop_to_bbox(B,bbox)
     Ua,Sa,Va = np.linalg.svd(A, full_matrices=False)
     Ub,Sb,Vb = np.linalg.svd(B, full_matrices=False)
     k = int(max(1, min(k, len(Sa), len(Sb))))
     sa, sb = Sa[:k].astype(np.float32), Sb[:k].astype(np.float32)
-    # spectra similarity
     num = float(np.linalg.norm(sa - sb))
     den = float(np.linalg.norm(sa) + np.linalg.norm(sb) + EPS)
     s_sigma = max(0.0, 1.0 - num/den)
-    # principal directions agreement
     cu = abs(float(Ua[:,0].dot(Ub[:,0]))/(np.linalg.norm(Ua[:,0])*np.linalg.norm(Ub[:,0])+EPS))
     cv = abs(float(Va[0,:].dot(Vb[0,:]))/(np.linalg.norm(Va[0,:])*np.linalg.norm(Vb[0,:])+EPS))
     s_vec = 0.5*(cu+cv)
@@ -170,7 +183,7 @@ def ncc_shift(A,B,M,max_shift=8):
             y0b=max(0,-dy);y1b=min(H,H-dy);x0b=max(0,-dx);x1b=min(W,W-dx)
             if y1a-y0a<=0 or x1a-x0a<=0: continue
             Aov = A[y0a:y1a, x0a:x1a]; Bov = B[y0b:y1b, x0b:x1b]
-            Mov = M[y0a:y1a, x0a:x1a] | M[y0b:y1b, x0b:x1b]
+            Mov = (M[y0a:y1a, x0a:x1a] & M[y0b:y1b, x0b:x1b])
             va = apply_mask_flat(Aov, Mov, True); vb = apply_mask_flat(Bov, Mov, True)
             na, nb = l2(va), l2(vb)
             if na<EPS or nb<EPS: continue
@@ -178,17 +191,11 @@ def ncc_shift(A,B,M,max_shift=8):
             if s>best: best = s
     return cos_to_pct(best if best>-2 else -1)
 
-# ---------------- Preprocess ----------------
-def preprocess(path, size_px, mask_thr):
-    img = pil_read_gray(path)
-    mask = auto_mask(img, mask_thr)
-    # crop to content, then resize, then recompute mask
-    bbox = bbox_from_mask(mask)
-    img  = crop_to_bbox(img, bbox)
+# ---------------- Preprocess (no crop here) ----------------
+def preprocess_single(path, size_px, mask_thr):
+    img  = pil_read_gray(path)
     img  = resize_np(img, size_px)
     mask = auto_mask(img, mask_thr)
-    # edges always on
-    img = sobel_mag(img)
     return img.astype(np.float32), mask
 
 def pil_preview(path, max_side=380):
@@ -201,6 +208,7 @@ METHOD_LABELS = [
     "Cosine Similarity (Centered, Masked)",
     "Frobenius Norm Distance (Masked)",
     "Patch-wise Cosine Similarity (Masked, Z-Score)",
+    "Patch-wise Cosine + Translation (Masked, Z-Score)",
     "PCA Projection Cosine Similarity",
     "SVD Spectral + Directional Similarity",
     "Normalized Cross-Correlation (NCC)"
@@ -209,9 +217,10 @@ LABEL_TO_KEY = {
     METHOD_LABELS[0]: "cosine",
     METHOD_LABELS[1]: "frob",
     METHOD_LABELS[2]: "patchcos",
-    METHOD_LABELS[3]: "pca",
-    METHOD_LABELS[4]: "svd",
-    METHOD_LABELS[5]: "ncc",
+    METHOD_LABELS[3]: "patchcos_shift",
+    METHOD_LABELS[4]: "pca",
+    METHOD_LABELS[5]: "svd",
+    METHOD_LABELS[6]: "ncc",
 }
 
 class App(tk.Tk):
@@ -239,7 +248,7 @@ class App(tk.Tk):
         ctl = ttk.Frame(self, padding=10); ctl.pack(fill="x")
         ttk.Label(ctl, text="Method:").grid(row=0, column=0, sticky="e")
         self.method_label = tk.StringVar(value=METHOD_LABELS[2])
-        ttk.Combobox(ctl, textvariable=self.method_label, width=40,
+        ttk.Combobox(ctl, textvariable=self.method_label, width=46,
                      values=METHOD_LABELS).grid(row=0, column=1, padx=6, sticky="w")
 
         ttk.Label(ctl, text="Resize(px):").grid(row=0, column=2, sticky="e")
@@ -259,7 +268,7 @@ class App(tk.Tk):
         self.min_cov = tk.DoubleVar(value=0.10); ttk.Entry(ctl, textvariable=self.min_cov, width=6).grid(row=1, column=5, sticky="w")
         ttk.Label(ctl, text="k (PCA/SVD):").grid(row=1, column=6, sticky="e")
         self.k = tk.IntVar(value=20); ttk.Entry(ctl, textvariable=self.k, width=6).grid(row=1, column=7, sticky="w")
-        ttk.Label(ctl, text="Shift (NCC):").grid(row=1, column=8, sticky="e")
+        ttk.Label(ctl, text="Shift (NCC/Trans):").grid(row=1, column=8, sticky="e")
         self.shift = tk.IntVar(value=8); ttk.Entry(ctl, textvariable=self.shift, width=6).grid(row=1, column=9, sticky="w")
 
         # Run + results
@@ -290,32 +299,56 @@ class App(tk.Tk):
         if not self.path1 or not self.path2:
             messagebox.showwarning("Missing images","Please select both images."); return
         try:
-            size = max(8, int(self.resize_px.get()))
-            thr  = float(self.mask_thr.get())
+            N   = max(8, int(self.resize_px.get()))
+            thr = float(self.mask_thr.get())
 
-            A, MA = preprocess(self.path1, size, thr)   # edges+centering+mask+crop are always on
-            B, MB = preprocess(self.path2, size, thr)
-            M = (MA | MB)
+            # Preprocess (no crop, no edges here)
+            A0, MA0 = preprocess_single(self.path1, N, thr)
+            B0, MB0 = preprocess_single(self.path2, N, thr)
+
+            # Joint crop on INTERSECTION mask (consistent region for both)
+            M_joint = (MA0 & MB0)
+            if M_joint.mean() < 1e-4:
+                # if intersection is empty, fall back to union to avoid crash
+                M_joint = (MA0 | MB0)
+            bbox = bbox_from_mask(M_joint)
+            A = crop_to_bbox(A0, bbox); B = crop_to_bbox(B0, bbox)
+            MA = crop_to_bbox(MA0, bbox); MB = crop_to_bbox(MB0, bbox)
+
+            # Sobel edges on cropped images
+            A = sobel_mag(A); B = sobel_mag(B)
 
             label = self.method_label.get()
             key = LABEL_TO_KEY[label]
+
             if key == "cosine":
+                M = (MA & MB)
                 s = cosine_masked(A,B,M)
             elif key == "frob":
+                M = (MA & MB)
                 s = frob_masked(A,B,M)
             elif key == "patchcos":
+                M = (MA & MB)
                 s = patchcos_masked(A,B,M, patch=int(self.patch.get()), stride=int(self.stride.get()),
                                     min_cov=float(self.min_cov.get()))
+            elif key == "patchcos_shift":
+                s = patchcos_shifted(A,B,MA,MB, patch=int(self.patch.get()), stride=int(self.stride.get()),
+                                     min_cov=float(self.min_cov.get()), max_shift=int(self.shift.get()))
             elif key == "pca":
+                M = (MA & MB)
                 s = pca_cosine(A,B,M, k=int(self.k.get()))
             elif key == "svd":
+                M = (MA & MB)
                 s = svd_energy(A,B,M, k=int(self.k.get()))
             elif key == "ncc":
+                M = (MA & MB)
                 s = ncc_shift(A,B,M, max_shift=int(self.shift.get()))
             else:
                 raise ValueError("Unknown method")
+
             self.lbl_score.configure(text=f"Score: {s:.2f}%")
             self.lbl_parts.configure(text=label)
+
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
