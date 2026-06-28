@@ -1,10 +1,11 @@
 """Advanced analysis pipeline — 8 steps with LaTeX formulas and visualizations.
 
 Each step computes metrics and renders matplotlib charts inside Streamlit
-expanders. All helpers are inlined to avoid Streamlit module-cache issues.
+expanders. Expanders default to collapsed (except step 1) for progressive
+disclosure. All helpers are inlined to avoid Streamlit module-cache issues.
 """
 
-import time
+import traceback
 
 import matplotlib
 matplotlib.use("Agg")
@@ -35,62 +36,56 @@ def _dark_ax(ax, title=None):
 STEPS = [
     {
         "title": "Load & Preprocess",
-        "formula": "I_gray = 0.299·R + 0.587·G + 0.114·B  ,  I_norm = I / 255",
+        "latex": r"I_{\text{gray}} = 0.299 \cdot R + 0.587 \cdot G + 0.114 \cdot B, \quad I_{\text{norm}} = \frac{I}{255}",
         "desc": "Convert to grayscale and normalize to [0, 1].",
     },
     {
         "title": "Resize & Align",
-        "formula": "I_resized = cv2.resize(I, (T, T), interpolation=INTER_AREA)",
+        "latex": r"I_{\text{resized}} = \text{cv2.resize}(I, (T, T), \text{interpolation}=\text{INTER\_AREA})",
         "desc": "Resize both images to the target dimension for fair comparison.",
     },
     {
         "title": "Flatten to Vectors",
-        "formula": "a = vec(A) ∈ ℝ^{n}  ,  n = T × T",
+        "latex": r"a = \text{vec}(A) \in \mathbb{R}^{n}, \quad n = T \times T",
         "desc": "Reshape 2D matrices into 1D vectors for linear algebra operations.",
     },
     {
         "title": "Norm-Based Distances",
-        "formula": "‖A−B‖_F = √(Σᵢⱼ (aᵢⱼ−bᵢⱼ)²)  ,  L₁ = Σ|aᵢⱼ−bᵢⱼ|  ,  L∞ = max|aᵢⱼ−bᵢⱼ|",
+        "latex": r"\|A - B\|_F = \sqrt{\sum_{i,j} (a_{ij} - b_{ij})^2}, \quad L_1 = \sum |a_{ij} - b_{ij}|, \quad L_\infty = \max |a_{ij} - b_{ij}|",
         "desc": "Compute Frobenius, L1, and L∞ norms of the difference matrix.",
     },
     {
         "title": "Vector Space Geometry",
-        "formula": "cos(θ) = (a·b) / (‖a‖·‖b‖)",
+        "latex": r"\cos(\theta) = \frac{a \cdot b}{\|a\| \cdot \|b\|}",
         "desc": "Measure the angle between image vectors in high-dimensional space.",
     },
     {
         "title": "SVD Analysis",
-        "formula": "A = U Σ Vᵀ  ,  Energy = Σᵢ σᵢ²  ,  Ratio = Σᵢ₌₁ᴷ σᵢ² / Σ σᵢ²",
+        "latex": r"A = U \Sigma V^T, \quad \text{Energy} = \sum_i \sigma_i^2, \quad \text{Ratio} = \frac{\sum_{i=1}^{K} \sigma_i^2}{\sum \sigma_i^2}",
         "desc": "Decompose images via SVD and compare singular value spectra.",
     },
     {
         "title": "Algorithmic Metrics",
-        "formula": "MSE = (1/n)Σ(aᵢ−bᵢ)²  ,  PSNR = 10·log₁₀(MAX²/MSE)  ,  HI = Σ min(hₐ, h_b)",
+        "latex": r"\text{MSE} = \frac{1}{n}\sum(a_i - b_i)^2, \quad \text{PSNR} = 10 \cdot \log_{10}\!\left(\frac{\text{MAX}^2}{\text{MSE}}\right), \quad \text{HI} = \sum \min(h_A, h_B)",
         "desc": "Compute pixel-level error metrics and histogram similarity.",
     },
     {
         "title": "Summary Report",
-        "formula": "Complete metric comparison with all computed values",
+        "latex": r"\text{All metrics aggregated into a unified comparison report}",
         "desc": "Aggregate all metrics into a unified comparison summary.",
     },
 ]
 
 
-def _render_formula(formula: str) -> None:
-    """Render a LaTeX formula in a styled box."""
+def _render_step_header(step_num: int, title: str, desc: str) -> None:
+    """Render a step header with number badge, title, and description."""
     st.html(f"""
-    <div class="formula-box">
-        <span style="font-family:'Courier New',monospace;font-size:0.85rem;color:#ccc">{formula}</span>
-    </div>
-    """)
-
-
-def _render_step_header(step_num: int, title: str) -> None:
-    """Render a step header with number badge."""
-    st.html(f"""
-    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+    <div style="display:flex;align-items:flex-start;gap:0.75rem;margin-bottom:0.5rem">
         <span class="step-number">{step_num}</span>
-        <span class="step-title">{title}</span>
+        <div>
+            <div class="step-title">{title}</div>
+            <div class="step-desc">{desc}</div>
+        </div>
     </div>
     """)
 
@@ -99,37 +94,26 @@ def _render_step_header(step_num: int, title: str) -> None:
 
 def _render_step_1(img_a, img_b):
     """Load & Preprocess — show grayscale images."""
-    _render_step_header(1, "Load & Preprocess")
-    _render_formula(STEPS[0]["formula"])
+    _render_step_header(1, STEPS[0]["title"], STEPS[0]["desc"])
+    st.latex(STEPS[0]["latex"])
 
     col1, col2 = st.columns(2)
     with col1:
-        st.image(img_a, caption="Image A (grayscale, normalized)", use_container_width=True)
+        st.image(img_a, caption=f"Image A — shape={img_a.shape}, dtype={img_a.dtype}", use_container_width=True)
     with col2:
-        st.image(img_b, caption="Image B (grayscale, normalized)", use_container_width=True)
+        st.image(img_b, caption=f"Image B — shape={img_b.shape}, dtype={img_b.dtype}", use_container_width=True)
 
-    st.info(f"Image A: shape={img_a.shape}, dtype={img_a.dtype}, range=[{img_a.min():.3f}, {img_a.max():.3f}]")
-    st.info(f"Image B: shape={img_b.shape}, dtype={img_b.dtype}, range=[{img_b.min():.3f}, {img_b.max():.3f}]")
-
-
-def _render_step_2(img_a, img_b):
-    """Resize & Align — show aligned images."""
-    _render_step_header(2, "Resize & Align")
-    _render_formula(STEPS[1]["formula"])
-
-    st.info(f"Both images resized to {img_a.shape[0]}×{img_a.shape[1]} pixels")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(img_a, caption=f"Image A ({img_a.shape[0]}×{img_a.shape[1]})", use_container_width=True)
-    with col2:
-        st.image(img_b, caption=f"Image B ({img_b.shape[0]}×{img_b.shape[1]})", use_container_width=True)
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        st.info(f"Range: [{img_a.min():.3f}, {img_a.max():.3f}]")
+    with col_info2:
+        st.info(f"Range: [{img_b.min():.3f}, {img_b.max():.3f}]")
 
 
 def _render_step_3(img_a, img_b):
     """Flatten to Vectors — show vector stats."""
-    _render_step_header(3, "Flatten to Vectors")
-    _render_formula(STEPS[2]["formula"])
+    _render_step_header(3, STEPS[2]["title"], STEPS[2]["desc"])
+    st.latex(STEPS[2]["latex"])
 
     vec_a = img_a.flatten()
     vec_b = img_b.flatten()
@@ -157,8 +141,8 @@ def _render_step_3(img_a, img_b):
 
 def _render_step_4(img_a, img_b):
     """Norm-Based Distances — compute and visualize norms."""
-    _render_step_header(4, "Norm-Based Distances")
-    _render_formula(STEPS[3]["formula"])
+    _render_step_header(4, STEPS[3]["title"], STEPS[3]["desc"])
+    st.latex(STEPS[3]["latex"])
 
     from src.linalg_metrics import frobenius_norm, l1_norm, l_inf_norm
 
@@ -181,7 +165,7 @@ def _render_step_4(img_a, img_b):
     flat_diff = np.abs(diff).flatten()
     flat_diff = flat_diff[flat_diff > 0] if np.any(flat_diff > 0) else flat_diff
     ax.hist(flat_diff, bins=50, color="#555", edgecolor="#333", alpha=0.8)
-    ax.set_xlabel("|aᵢⱼ − bᵢⱼ|", color=_DARK_FG, fontsize=9)
+    ax.set_xlabel("|a_ij − b_ij|", color=_DARK_FG, fontsize=9)
     ax.set_ylabel("Count", color=_DARK_FG, fontsize=9)
     st.pyplot(fig)
     plt.close(fig)
@@ -189,8 +173,8 @@ def _render_step_4(img_a, img_b):
 
 def _render_step_5(img_a, img_b):
     """Vector Space Geometry — cosine similarity."""
-    _render_step_header(5, "Vector Space Geometry")
-    _render_formula(STEPS[4]["formula"])
+    _render_step_header(5, STEPS[4]["title"], STEPS[4]["desc"])
+    st.latex(STEPS[4]["latex"])
 
     from src.linalg_metrics import cosine_similarity
 
@@ -226,8 +210,8 @@ def _render_step_5(img_a, img_b):
 
 def _render_step_6(img_a, img_b):
     """SVD Analysis — singular values and energy."""
-    _render_step_header(6, "SVD Analysis")
-    _render_formula(STEPS[5]["formula"])
+    _render_step_header(6, STEPS[5]["title"], STEPS[5]["desc"])
+    st.latex(STEPS[5]["latex"])
 
     from src.linalg_metrics import svd_energy_comparison
 
@@ -260,10 +244,10 @@ def _render_step_6(img_a, img_b):
 
 def _render_step_7(img_a, img_b):
     """Algorithmic Metrics — MSE, PSNR, histogram."""
-    _render_step_header(7, "Algorithmic Metrics")
-    _render_formula(STEPS[6]["formula"])
+    _render_step_header(7, STEPS[6]["title"], STEPS[6]["desc"])
+    st.latex(STEPS[6]["latex"])
 
-    from src.algo_metrics import mse, psnr, histogram_intersection
+    from src.algo_metrics import mse, psnr, histogram_intersection, histogram_intersection_detailed
 
     mse_val = mse(img_a, img_b)
     psnr_val = psnr(img_a, img_b)
@@ -277,7 +261,6 @@ def _render_step_7(img_a, img_b):
     with col3:
         st.metric("Histogram Intersection", f"{hist_int:.6f}")
 
-    from src.algo_metrics import histogram_intersection_detailed
     hist_result = histogram_intersection_detailed(img_a, img_b, bins=64)
 
     fig = _dark_fig(8, 4)
@@ -296,15 +279,8 @@ def _render_step_7(img_a, img_b):
 
 def _render_step_8(report):
     """Summary Report — all metrics in a table."""
-    _render_step_header(8, "Summary Report")
-
-    st.html("""
-    <div class="formula-box">
-        <span style="font-family:'Courier New',monospace;font-size:0.85rem;color:#ccc">
-            Comparison complete — all metrics aggregated below
-        </span>
-    </div>
-    """)
+    _render_step_header(8, STEPS[7]["title"], STEPS[7]["desc"])
+    st.latex(STEPS[7]["latex"])
 
     import pandas as pd
 
@@ -324,27 +300,53 @@ def _render_step_8(report):
     df = pd.DataFrame(rows, columns=["Metric", "Value"])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-    st.json(report.to_dict(), expanded=False)
+    with st.expander("Full JSON Report", expanded=False):
+        st.json(report.to_dict())
 
 
 # ── Pipeline runner ─────────────────────────────────────────────────
 
 def run_advanced_pipeline(img_a, img_b, pair, report):
-    """Execute the 8-step advanced analysis pipeline."""
+    """Execute the 8-step advanced analysis pipeline.
+
+    Expanders default to collapsed except step 1 for progressive disclosure.
+    Each step is wrapped in try/except for graceful error handling.
+    """
     steps = [
-        ("Step 1/8 — Load & Preprocess", lambda: _render_step_1(img_a, img_b)),
-        ("Step 2/8 — Resize & Align", lambda: _render_step_2(img_a, img_b)),
-        ("Step 3/8 — Flatten to Vectors", lambda: _render_step_3(img_a, img_b)),
-        ("Step 4/8 — Norm-Based Distances", lambda: _render_step_4(img_a, img_b)),
-        ("Step 5/8 — Vector Space Geometry", lambda: _render_step_5(img_a, img_b)),
-        ("Step 6/8 — SVD Analysis", lambda: _render_step_6(img_a, img_b)),
-        ("Step 7/8 — Algorithmic Metrics", lambda: _render_step_7(img_a, img_b)),
-        ("Step 8/8 — Summary Report", lambda: _render_step_8(report)),
+        ("1. Load & Preprocess",       lambda: _render_step_1(img_a, img_b)),
+        # Steps 1 & 2 merged: resize info is shown as caption in step 1
+        ("2. Resize & Align",          lambda: _render_step_2_info(img_a, img_b)),
+        ("3. Flatten to Vectors",      lambda: _render_step_3(img_a, img_b)),
+        ("4. Norm-Based Distances",    lambda: _render_step_4(img_a, img_b)),
+        ("5. Vector Space Geometry",   lambda: _render_step_5(img_a, img_b)),
+        ("6. SVD Analysis",            lambda: _render_step_6(img_a, img_b)),
+        ("7. Algorithmic Metrics",     lambda: _render_step_7(img_a, img_b)),
+        ("8. Summary Report",          lambda: _render_step_8(report)),
     ]
 
-    for label, renderer in steps:
-        with st.expander(label, expanded=True):
-            t0 = time.time()
-            renderer()
-            elapsed = time.time() - t0
-            st.caption(f"Computed in {elapsed:.3f}s")
+    for i, (label, renderer) in enumerate(steps):
+        with st.expander(label, expanded=(i == 0)):
+            try:
+                renderer()
+            except Exception as e:
+                st.error(f"Step failed: {e}")
+                with st.expander("Show details"):
+                    st.code(traceback.format_exc())
+
+
+def _render_step_2_info(img_a, img_b):
+    """Step 2 — Resize & Align (info display, no redundant image render)."""
+    _render_step_header(2, STEPS[1]["title"], STEPS[1]["desc"])
+    st.latex(STEPS[1]["latex"])
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Image A Size", f"{img_a.shape[1]}×{img_a.shape[0]}")
+    with col2:
+        st.metric("Image B Size", f"{img_b.shape[1]}×{img_b.shape[0]}")
+    with col3:
+        st.metric("Channels", f"{img_a.shape[2] if len(img_a.shape) > 2 else 1}")
+    with col4:
+        st.metric("Pixel Count", f"{img_a.shape[0] * img_a.shape[1]:,}")
+
+    st.info("Both images are resized to the same dimensions using INTER_AREA interpolation for accurate downsampling.")
