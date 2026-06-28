@@ -66,18 +66,19 @@ if "_export_figs" not in st.session_state:
             plot_histogram_comparison,
             plot_full_comparison,
         )
-        from src.algo_metrics import histogram_intersection_detailed
+        from src.algo_metrics import histogram_intersection_detailed, difference_image
         from src.linalg_metrics import svd_energy_comparison
 
         hist_result = histogram_intersection_detailed(img_a, img_b, bins=64)
         svd_result = svd_energy_comparison(img_a, img_b)
+        diff = difference_image(img_a, img_b)
 
         st.session_state._export_figs = {
             "originals": plot_original_images(img_a, img_b),
-            "heatmap": plot_difference_heatmap(img_a, img_b),
-            "svd": plot_svd_spectrum(svd_result),
-            "histogram": plot_histogram_comparison(hist_result),
-            "full": plot_full_comparison(img_a, img_b, svd_result, hist_result),
+            "heatmap": plot_difference_heatmap(diff),
+            "svd": plot_svd_spectrum(svd_result.singular_values_a, svd_result.singular_values_b),
+            "histogram": plot_histogram_comparison(hist_result.hist_a, hist_result.hist_b, hist_result.bin_edges, hist_result.intersection),
+            "full": plot_full_comparison(img_a, img_b, diff, svd_result.singular_values_a, svd_result.singular_values_b),
             "hist_result": hist_result,
             "svd_result": svd_result,
         }
@@ -193,16 +194,16 @@ with col_size:
 st.markdown("#### 📋 Raw Metrics")
 
 metric_rows = [
-    ("Frobenius Norm", f"{report.frobenius_norm:.6f}", "Matrix distance measure — lower means more similar"),
-    ("Cosine Similarity", f"{report.cosine_similarity:.6f}", "Vector angle similarity — closer to 1 is better"),
+    ("Frobenius Norm", f"{report.frobenius:.6f}", "Matrix distance measure — lower means more similar"),
+    ("Cosine Similarity", f"{report.cosine_sim:.6f}", "Vector angle similarity — closer to 1 is better"),
     ("MSE", f"{report.mse:.8f}", "Mean Squared Error — lower means less pixel difference"),
-    ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB", "Peak Signal-to-Noise Ratio — higher is better"),
-    ("L1 Norm", f"{report.l1_norm:.4f}", "Sum of absolute differences"),
-    ("L∞ Norm", f"{report.l_inf_norm:.6f}", "Maximum absolute pixel difference"),
-    ("Histogram Intersection", f"{report.histogram_intersection:.6f}", "Intensity distribution overlap — closer to 1 is better"),
-    ("SVD Energy Ratio", f"{report.svd_energy_ratio:.6f}", "Ratio of top-K singular value energy"),
-    ("Cosine Distance (SV)", f"{report.cosine_distance_sv:.6f}", "1 - cosine(svd_a, svd_b) — lower means more similar"),
-    ("SVD Top-K Cosine", f"{report.top_k_singular_cosine:.6f}", "Cosine of top-K singular vectors — closer to 1 is better"),
+    ("PSNR", f"{report.psnr_db:.2f} dB" if report.psnr_db != float("inf") else "∞ dB", "Peak Signal-to-Noise Ratio — higher is better"),
+    ("L1 Norm", f"{report.l1:.4f}", "Sum of absolute differences"),
+    ("L∞ Norm", f"{report.l_inf:.6f}", "Maximum absolute pixel difference"),
+    ("Histogram Intersection", f"{report.hist_intersection:.6f}", "Intensity distribution overlap — closer to 1 is better"),
+    ("SVD Energy Ratio", f"{report.svd.energy_ratio:.6f}", "Ratio of top-K singular value energy"),
+    ("Cosine Distance (SV)", f"{report.svd.cosine_distance_sv:.6f}", "1 - cosine(svd_a, svd_b) — lower means more similar"),
+    ("SVD Top-K Cosine", f"{report.svd.top_k_singular_cosine:.6f}", "Cosine of top-K singular vectors — closer to 1 is better"),
 ]
 
 df = pd.DataFrame(metric_rows, columns=["Metric", "Value", "Description"])

@@ -197,12 +197,14 @@ if compare_clicked:
             from src.loader import load_and_prepare_images
             from src.comparator import ImageComparator
 
+            ts = (target_size, target_size)
+
             pair = load_and_prepare_images(
-                str(path_a), str(path_b), target_size=target_size
+                str(path_a), str(path_b), target_size=ts
             )
 
             comparator = ImageComparator(
-                target_size=target_size,
+                target_size=ts,
                 svd_top_k=svd_top_k,
                 histogram_bins=histogram_bins,
             )
@@ -217,7 +219,6 @@ if compare_clicked:
             st.stop()
 
     st.toast("Comparison complete!", icon="✅")
-    st.rerun()
 
 
 # ── Results preview ─────────────────────────────────────────────────
@@ -229,7 +230,7 @@ if st.session_state.report is not None:
     st.html('<div style="height:1rem"></div>')
 
     # ── Summary banner with plain-language interpretation ──
-    cosine = report.cosine_similarity
+    cosine = report.cosine_sim
     if cosine >= 0.95:
         banner_cls = "good"
         icon = "✅"
@@ -262,8 +263,8 @@ if st.session_state.report is not None:
     kpi_data = [
         ("Cosine Similarity", f"{cosine:.4f}", "good" if cosine >= 0.95 else ("warn" if cosine >= 0.70 else "bad")),
         ("MSE", f"{report.mse:.6f}", "good" if report.mse < 0.001 else ("warn" if report.mse < 0.01 else "bad")),
-        ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB", "good"),
-        ("Frobenius", f"{report.frobenius_norm:.2f}", "good" if report.frobenius_norm < 1 else ("warn" if report.frobenius_norm < 10 else "bad")),
+        ("PSNR", f"{report.psnr_db:.2f} dB" if report.psnr_db != float("inf") else "∞ dB", "good"),
+        ("Frobenius", f"{report.frobenius:.2f}", "good" if report.frobenius < 1 else ("warn" if report.frobenius < 10 else "bad")),
     ]
 
     kpi_html = '<div class="kpi-strip">'

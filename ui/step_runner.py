@@ -216,7 +216,7 @@ def _render_step_6(img_a, img_b):
     from src.linalg_metrics import svd_energy_comparison
 
     result = svd_energy_comparison(img_a, img_b)
-    sv = result.singular_values
+    sv = result.singular_values_a
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -266,10 +266,10 @@ def _render_step_7(img_a, img_b):
     fig = _dark_fig(8, 4)
     ax = fig.add_subplot(111)
     _dark_ax(ax, "Histogram Comparison")
-    edges = hist_result.edges
+    edges = hist_result.bin_edges
     centers = (edges[:-1] + edges[1:]) / 2
-    ax.fill_between(centers, hist_result.histogram_a, alpha=0.4, color="#666", label="Image A")
-    ax.fill_between(centers, hist_result.histogram_b, alpha=0.4, color="#aaa", label="Image B")
+    ax.fill_between(centers, hist_result.hist_a, alpha=0.4, color="#666", label="Image A")
+    ax.fill_between(centers, hist_result.hist_b, alpha=0.4, color="#aaa", label="Image B")
     ax.set_xlabel("Intensity", color=_DARK_FG, fontsize=9)
     ax.set_ylabel("Density", color=_DARK_FG, fontsize=9)
     legend = ax.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
@@ -285,16 +285,16 @@ def _render_step_8(report):
     import pandas as pd
 
     rows = [
-        ("Frobenius Norm", f"{report.frobenius_norm:.6f}"),
-        ("Cosine Similarity", f"{report.cosine_similarity:.6f}"),
+        ("Frobenius Norm", f"{report.frobenius:.6f}"),
+        ("Cosine Similarity", f"{report.cosine_sim:.6f}"),
         ("MSE", f"{report.mse:.8f}"),
-        ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB"),
-        ("L1 Norm", f"{report.l1_norm:.4f}"),
-        ("L∞ Norm", f"{report.l_inf_norm:.6f}"),
-        ("Histogram Intersection", f"{report.histogram_intersection:.6f}"),
-        ("SVD Energy Ratio", f"{report.svd_energy_ratio:.6f}"),
-        ("Cosine Distance (SV)", f"{report.cosine_distance_sv:.6f}"),
-        ("SVD Top-K Cosine", f"{report.top_k_singular_cosine:.6f}"),
+        ("PSNR", f"{report.psnr_db:.2f} dB" if report.psnr_db != float("inf") else "∞ dB"),
+        ("L1 Norm", f"{report.l1:.4f}"),
+        ("L∞ Norm", f"{report.l_inf:.6f}"),
+        ("Histogram Intersection", f"{report.hist_intersection:.6f}"),
+        ("SVD Energy Ratio", f"{report.svd.energy_ratio:.6f}"),
+        ("Cosine Distance (SV)", f"{report.svd.cosine_distance_sv:.6f}"),
+        ("SVD Top-K Cosine", f"{report.svd.top_k_singular_cosine:.6f}"),
     ]
 
     df = pd.DataFrame(rows, columns=["Metric", "Value"])

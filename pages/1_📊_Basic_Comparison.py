@@ -67,7 +67,7 @@ st.html("""
 
 
 # ── Summary banner ──────────────────────────────────────────────────
-cosine = report.cosine_similarity
+cosine = report.cosine_sim
 if cosine >= 0.95:
     banner_cls, icon = "good", "✅"
     text = f"These images are <strong>very similar</strong> — Cosine Similarity: <strong>{cosine:.1%}</strong>"
@@ -115,14 +115,14 @@ def _metric_cls(name, value_str):
     return ""
 
 metrics = [
-    ("Frobenius Norm", f"{report.frobenius_norm:.4f}", "Matrix distance — lower means more similar"),
-    ("Cosine Similarity", f"{report.cosine_similarity:.6f}", "Vector angle — closer to 1 means more similar"),
+    ("Frobenius Norm", f"{report.frobenius:.4f}", "Matrix distance — lower means more similar"),
+    ("Cosine Similarity", f"{report.cosine_sim:.6f}", "Vector angle — closer to 1 means more similar"),
     ("MSE", f"{report.mse:.8f}", "Mean Squared Error — lower means less pixel difference"),
-    ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB", "Peak Signal-to-Noise — higher is better"),
-    ("L1 Norm", f"{report.l1_norm:.2f}", "Sum of absolute pixel differences"),
-    ("L∞ Norm", f"{report.l_inf_norm:.6f}", "Maximum single-pixel difference"),
-    ("Hist. Intersection", f"{report.histogram_intersection:.6f}", "Intensity distribution overlap — closer to 1 is better"),
-    ("SVD Energy Ratio", f"{report.svd_energy_ratio:.6f}", "Energy captured by top-K singular values"),
+    ("PSNR", f"{report.psnr_db:.2f} dB" if report.psnr_db != float("inf") else "∞ dB", "Peak Signal-to-Noise — higher is better"),
+    ("L1 Norm", f"{report.l1:.2f}", "Sum of absolute pixel differences"),
+    ("L∞ Norm", f"{report.l_inf:.6f}", "Maximum single-pixel difference"),
+    ("Hist. Intersection", f"{report.hist_intersection:.6f}", "Intensity distribution overlap — closer to 1 is better"),
+    ("SVD Energy Ratio", f"{report.svd.energy_ratio:.6f}", "Energy captured by top-K singular values"),
 ]
 
 grid_html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-bottom:2rem">'
@@ -156,7 +156,7 @@ st.markdown("#### SVD Spectrum")
 from src.linalg_metrics import svd_energy_comparison
 
 svd_result = svd_energy_comparison(img_a, img_b)
-sv = svd_result.singular_values
+sv = svd_result.singular_values_a
 
 fig_svd = _dark_fig(8, 4)
 ax_svd = fig_svd.add_subplot(111)
@@ -188,11 +188,11 @@ fig_hist = _dark_fig(8, 4)
 ax_hist = fig_hist.add_subplot(111)
 _dark_ax(ax_hist, "Pixel Intensity Histograms")
 
-edges = hist_result.edges
+edges = hist_result.bin_edges
 centers = (edges[:-1] + edges[1:]) / 2
 width = edges[1] - edges[0]
-ax_hist.fill_between(centers, hist_result.histogram_a, alpha=0.4, color="#666", label="Image A")
-ax_hist.fill_between(centers, hist_result.histogram_b, alpha=0.4, color="#aaa", label="Image B")
+ax_hist.fill_between(centers, hist_result.hist_a, alpha=0.4, color="#666", label="Image A")
+ax_hist.fill_between(centers, hist_result.hist_b, alpha=0.4, color="#aaa", label="Image B")
 ax_hist.set_xlabel("Intensity", color=_DARK_FG, fontsize=9)
 ax_hist.set_ylabel("Density", color=_DARK_FG, fontsize=9)
 legend = ax_hist.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
@@ -216,7 +216,8 @@ with col_dl1:
     )
 with col_dl2:
     from src.visualizer import plot_full_comparison
-    fig_full = plot_full_comparison(img_a, img_b, svd_result, hist_result)
+    diff = difference_image(img_a, img_b)
+    fig_full = plot_full_comparison(img_a, img_b, diff, svd_result.singular_values_a, svd_result.singular_values_b)
     buf = io.BytesIO()
     fig_full.savefig(buf, format="png", dpi=150, facecolor=_DARK_BG, bbox_inches="tight")
     plt.close(fig_full)
