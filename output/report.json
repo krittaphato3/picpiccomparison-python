@@ -1,0 +1,53 @@
+{
+  "path_a": "data\\cultivation_world1.png",
+  "path_b": "data\\cultivation_world2.png",
+  "dimensions": {
+    "height": 736,
+    "width": 736
+  },
+  "linear_algebra_metrics": {
+    "frobenius_norm_l2": 0.0,
+    "l1_norm_manhattan": 0.0,
+    "l_inf_norm_chebyshev": 0.0,
+    "cosine_similarity": 0.9999999999999999,
+    "dot_product": 29268.583206459054
+  },
+  "svd_analysis": {
+    "energy_a": 29268.58320645905,
+    "energy_b": 29268.58320645905,
+    "energy_ratio": 1.0,
+    "cosine_distance_sv": 1.1102230246251565e-16,
+    "top_k_singular_cosine": 1.0,
+    "num_singular_values_a": 736,
+    "num_singular_values_b": 736,
+    "top_10_singular_values_a": [
+      148.9455708864415,
+      45.17989391550818,
+      39.54398476423555,
+      28.039629114547495,
+      19.399636800831757,
+      15.991780483092247,
+      15.55271418429996,
+      13.944726926277331,
+      11.789202757427036,
+      10.607410759920867
+    ],
+    "top_10_singular_values_b": [
+      148.9455708864415,
+      45.17989391550818,
+      39.54398476423555,
+      28.039629114547495,
+      19.399636800831757,
+      15.991780483092247,
+      15.55271418429996,
+      13.944726926277331,
+      11.789202757427036,
+      10.607410759920867
+    ]
+  },
+  "algorithmic_metrics": {
+    "mse": 0.0,
+    "psnr_db": Infinity,
+    "histogram_intersection": 0.9999999999999999
+  }
+}
