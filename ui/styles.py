@@ -1,139 +1,676 @@
-"""
-PicPicComparison — Dark Mode CSS Only.
-No helper functions here — avoids Streamlit module-cache issues.
-"""
+"""Custom CSS injection for the PicPicComparison dark-mode UI.
 
-from __future__ import annotations
+Black & gray palette with smooth motion, glass morphism, and premium feel.
+Only exports ``inject_custom_css()`` — all helper functions live in the page
+files to avoid Streamlit module-cache issues.
+"""
 
 
 def inject_custom_css() -> None:
-    """Inject full-width dark-mode CSS."""
+    """Inject the full custom CSS block into the Streamlit page."""
+    css = """
+<style>
+/* ================================================================
+   0.  RESET & GLOBALS
+   ================================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --bg-base:      #0a0a0f;
+    --bg-surface:   #111118;
+    --bg-card:      #16161e;
+    --bg-elevated:  #1c1c26;
+    --bg-hover:     #22222e;
+    --border:       #2a2a35;
+    --border-light: #333340;
+    --text-primary: #e8e8ec;
+    --text-secondary: #8a8a95;
+    --text-muted:   #5a5a65;
+    --white:        #ffffff;
+    --radius-sm:    8px;
+    --radius-md:    12px;
+    --radius-lg:    16px;
+    --radius-xl:    20px;
+    --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-med:  0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+    --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+    --shadow-lg:  0 8px 32px rgba(0,0,0,0.6);
+    --shadow-xl:  0 16px 48px rgba(0,0,0,0.7);
+}
+
+* { box-sizing: border-box; }
+
+/* Hide Streamlit branding / hamburger */
+#MainMenu { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* Full viewport */
+.block-container {
+    max-width: 100% !important;
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+}
+
+body, .stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ================================================================
+   1.  PAGE HEADER
+   ================================================================ */
+.page-header {
+    position: relative;
+    padding: 2.5rem 2rem 2rem;
+    margin: -2rem -2rem 2rem;
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+    background: linear-gradient(135deg, #111118 0%, #16161e 100%);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+}
+.page-header::before {
+    content: '';
+    position: absolute;
+    top: -40%;
+    right: -10%;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%);
+    pointer-events: none;
+}
+.page-header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--white);
+    margin: 0 0 0.25rem;
+    letter-spacing: -0.02em;
+}
+.page-header p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0;
+    font-weight: 400;
+}
+
+/* ================================================================
+   2.  SIDEBAR
+   ================================================================ */
+section[data-testid="stSidebar"] {
+    background: var(--bg-surface) !important;
+    border-right: 1px solid var(--border) !important;
+}
+section[data-testid="stSidebar"] .stMarkdown h1,
+section[data-testid="stSidebar"] .stMarkdown h2,
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    color: var(--white) !important;
+    font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] .stMarkdown p,
+section[data-testid="stSidebar"] .stMarkdown span {
+    color: var(--text-secondary) !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-color: var(--border) !important;
+    opacity: 0.5;
+}
+
+/* ================================================================
+   3.  CARDS — Glass Morphism
+   ================================================================ */
+.glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    transition: all var(--transition-med);
+    position: relative;
+    overflow: hidden;
+}
+.glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+}
+.glass-card:hover {
+    border-color: var(--border-light);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* ================================================================
+   4.  KPI STRIP — Gradient cards
+   ================================================================ */
+.kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+.kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1rem;
+    text-align: center;
+    transition: all var(--transition-med);
+    position: relative;
+    overflow: hidden;
+}
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #444, #666);
+}
+.kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-light);
+}
+.kpi-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+}
+.kpi-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+/* ================================================================
+   5.  FEATURE CARDS
+   ================================================================ */
+.feature-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.5rem 1.25rem;
+    text-align: center;
+    transition: all var(--transition-med);
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+}
+.feature-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+    opacity: 0;
+    transition: opacity var(--transition-med);
+}
+.feature-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-light);
+    box-shadow: var(--shadow-lg);
+}
+.feature-card:hover::after {
+    opacity: 1;
+}
+.feature-icon {
+    font-size: 1.75rem;
+    margin-bottom: 0.75rem;
+    display: block;
+}
+.feature-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 0.3rem;
+}
+.feature-desc {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ================================================================
+   6.  METRIC CARDS (Results page)
+   ================================================================ */
+.metric-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.1rem 1rem;
+    transition: all var(--transition-med);
+    position: relative;
+    overflow: hidden;
+}
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px;
+    height: 100%;
+    background: linear-gradient(180deg, #555, #333);
+    border-radius: 3px 0 0 3px;
+}
+.metric-card:hover {
+    border-color: var(--border-light);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+.metric-name {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+}
+.metric-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -0.01em;
+}
+
+/* ================================================================
+   7.  MODE BADGE
+   ================================================================ */
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.75rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+}
+.mode-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #555;
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* ================================================================
+   8.  BUTTONS
+   ================================================================ */
+/* Primary — solid dark with white text */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"] {
+    background: var(--white) !important;
+    color: var(--bg-base) !important;
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    padding: 0.55rem 1.5rem !important;
+    transition: all var(--transition-fast) !important;
+    letter-spacing: 0.01em;
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="stBaseButton-primary"]:hover {
+    background: #e0e0e0 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255,255,255,0.1);
+}
+.stButton > button[kind="primary"]:active,
+.stButton > button[data-testid="stBaseButton-primary"]:active {
+    transform: translateY(0);
+    background: #ccc !important;
+}
+
+/* Secondary — ghost / outlined */
+.stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]),
+.stButton > button[data-testid="stBaseButton-secondary"] {
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    font-weight: 500 !important;
+    font-size: 0.82rem !important;
+    padding: 0.5rem 1.25rem !important;
+    transition: all var(--transition-fast) !important;
+}
+.stButton > button:not([kind="primary"]):not([data-testid="stBaseButton-primary"]):hover,
+.stButton > button[data-testid="stBaseButton-secondary"]:hover {
+    color: var(--white) !important;
+    border-color: var(--border-light) !important;
+    background: var(--bg-elevated) !important;
+    transform: translateY(-1px);
+}
+
+/* Download buttons */
+.stDownloadButton > button {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    font-weight: 500 !important;
+    transition: all var(--transition-fast) !important;
+}
+.stDownloadButton > button:hover {
+    border-color: var(--border-light) !important;
+    background: var(--bg-hover) !important;
+    transform: translateY(-1px);
+}
+
+/* ================================================================
+   9.  FILE UPLOADER
+   ================================================================ */
+.stFileUploader {
+    border: none !important;
+}
+.stFileUploader > div {
+    background: var(--bg-card) !important;
+    border: 1px dashed var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    transition: all var(--transition-fast) !important;
+}
+.stFileUploader > div:hover {
+    border-color: var(--border-light) !important;
+    background: var(--bg-elevated) !important;
+}
+.stFileUploader label {
+    color: var(--text-secondary) !important;
+}
+
+/* ================================================================
+   10.  EXPANDERS
+   ================================================================ */
+details[data-testid="stExpander"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    transition: all var(--transition-fast) !important;
+    margin-bottom: 0.75rem !important;
+}
+details[data-testid="stExpander"]:hover {
+    border-color: var(--border-light) !important;
+}
+details[data-testid="stExpander"] summary {
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    padding: 0.75rem 1rem !important;
+}
+details[data-testid="stExpander"][open] {
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ================================================================
+   11.  IMAGES
+   ================================================================ */
+.stImage > img {
+    border-radius: var(--radius-md) !important;
+    border: 1px solid var(--border) !important;
+    transition: transform var(--transition-med) !important;
+}
+.stImage > img:hover {
+    transform: scale(1.01);
+}
+
+/* ================================================================
+   12.  SLIDER
+   ================================================================ */
+.stSlider > div > div > div {
+    background-color: var(--border) !important;
+}
+.stSlider > div > div > div > div {
+    background-color: var(--white) !important;
+}
+
+/* ================================================================
+   13.  TABS
+   ================================================================ */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    padding: 4px;
+    gap: 2px;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.82rem;
+    transition: all var(--transition-fast);
+    padding: 0.5rem 1rem;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+.stTabs [aria-selected="true"] {
+    background: var(--bg-card) !important;
+    color: var(--white) !important;
+    border-color: var(--border-light) !important;
+}
+.stTabs [data-baseweb="tab-border"] {
+    display: none;
+}
+
+/* ================================================================
+   14.  DATAFRAME / TABLE
+   ================================================================ */
+.stDataFrame {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+/* ================================================================
+   15.  INFO / WARNING / ERROR boxes
+   ================================================================ */
+.stAlert {
+    border-radius: var(--radius-sm) !important;
+    border-left-width: 3px !important;
+    font-size: 0.82rem !important;
+}
+
+/* ================================================================
+   16.  SPINNER
+   ================================================================ */
+.stSpinner > div {
+    border-top-color: var(--text-secondary) !important;
+}
+
+/* ================================================================
+   17.  PROGRESS BAR
+   ================================================================ */
+.stProgress > div > div {
+    background-color: var(--border) !important;
+}
+.stProgress > div > div > div {
+    background-color: var(--white) !important;
+}
+
+/* ================================================================
+   18.  COLUMNS — Subtle dividers
+   ================================================================ */
+[data-testid="stHorizontalBlock"] > div:not(:last-child) {
+    border-right: 1px solid var(--border);
+    padding-right: 1rem;
+}
+
+/* ================================================================
+   19.  NAVIGATION LINKS (page links at bottom)
+   ================================================================ */
+.nav-links {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+}
+.nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+.nav-link:hover {
+    color: var(--white);
+    border-color: var(--border-light);
+    background: var(--bg-elevated);
+    transform: translateY(-1px);
+}
+
+/* ================================================================
+   20.  STEP PIPELINE (Advanced page)
+   ================================================================ */
+.step-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: all var(--transition-med);
+    position: relative;
+}
+.step-card:hover {
+    border-color: var(--border-light);
+    box-shadow: var(--shadow-md);
+}
+.step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.step-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 0.25rem;
+}
+.step-desc {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ================================================================
+   21.  ANIMATIONS
+   ================================================================ */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.stApp {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* ================================================================
+   22.  CHECKBOX / TOGGLE
+   ================================================================ */
+.stCheckbox > label {
+    color: var(--text-secondary) !important;
+    font-size: 0.82rem !important;
+}
+.stCheckbox > label:hover {
+    color: var(--text-primary) !important;
+}
+
+/* ================================================================
+   23.  RADIO / SELECT
+   ================================================================ */
+.stRadio > label,
+.stSelectbox > label {
+    color: var(--text-secondary) !important;
+    font-size: 0.82rem !important;
+}
+
+/* ================================================================
+   24.  CAPTION / SMALL TEXT
+   ================================================================ */
+.stCaption, .caption {
+    color: var(--text-muted) !important;
+    font-size: 0.75rem !important;
+}
+
+/* ================================================================
+   25.  DIVIDER
+   ================================================================ */
+hr {
+    border-color: var(--border) !important;
+    opacity: 0.4;
+}
+
+/* ================================================================
+   26.  CODE BLOCKS
+   ================================================================ */
+code {
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 4px !important;
+    padding: 0.15rem 0.4rem !important;
+    font-size: 0.78rem !important;
+}
+
+/* ================================================================
+   27.  LATEX FORMULA CONTAINERS
+   ================================================================ */
+.formula-box {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem;
+    margin: 0.75rem 0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+.formula-box:hover {
+    border-color: var(--border-light);
+}
+</style>
+"""
     import streamlit as st
-
-    st.html(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-
-        /* === FULLSCREEN === */
-        .block-container {
-            max-width: 100% !important;
-            padding-left: 2rem !important;
-            padding-right: 2rem !important;
-            padding-top: 1.5rem !important;
-        }
-        .stApp { font-family: 'Inter', sans-serif; background: #0b0b1e !important; }
-
-        /* === HEADER === */
-        .page-header {
-            background: linear-gradient(135deg, rgba(124,106,239,0.18) 0%, rgba(168,85,247,0.12) 40%, rgba(6,182,212,0.06) 100%);
-            border: 1px solid rgba(124,106,239,0.15);
-            border-radius: 16px;
-            padding: 32px 40px;
-            margin-bottom: 28px;
-            position: relative;
-            overflow: hidden;
-        }
-        .page-header::before {
-            content: ''; position: absolute; top: -60px; right: -40px;
-            width: 240px; height: 240px;
-            background: radial-gradient(circle, rgba(124,106,239,0.1) 0%, transparent 70%);
-            border-radius: 50%;
-        }
-        .page-header h1 {
-            color: #fff !important; font-size: 1.9rem !important; font-weight: 800 !important;
-            margin: 0 !important; letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #fff 0%, #c4b5fd 60%, #67e8f9 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .page-header p { color: rgba(224,224,240,0.55) !important; margin: 6px 0 0 0 !important; font-size: 0.95rem !important; }
-
-        /* === SIDEBAR === */
-        section[data-testid="stSidebar"] { background: #08081a !important; border-right: 1px solid rgba(255,255,255,0.04) !important; }
-        section[data-testid="stSidebar"] .stMarkdown h2 { color: #e0e0f0 !important; font-weight: 700 !important; }
-        section[data-testid="stSidebar"] .stMarkdown h3 { color: #8888aa !important; font-weight: 600 !important; }
-
-        /* === METRIC CARDS === */
-        div[data-testid="stMetric"] {
-            background: rgba(17,17,48,0.7); border: 1px solid rgba(124,106,239,0.1);
-            border-radius: 12px; padding: 18px 20px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.25); transition: all 0.3s ease;
-        }
-        div[data-testid="stMetric"]:hover {
-            border-color: rgba(124,106,239,0.3);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 0 15px rgba(124,106,239,0.06);
-            transform: translateY(-1px);
-        }
-        div[data-testid="stMetric"] label { font-size: 11px !important; font-weight: 600 !important; color: #7777aa !important; text-transform: uppercase; letter-spacing: 0.05em; }
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-size: 24px !important; font-weight: 800 !important; color: #fff !important; }
-
-        /* === BUTTONS === */
-        .stButton > button { border-radius: 10px !important; font-weight: 600 !important; transition: all 0.25s ease !important; }
-        .stButton > button:hover { transform: translateY(-1px) !important; }
-        .stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"] {
-            background: linear-gradient(135deg, #7c6aef, #a855f7) !important; color: #fff !important;
-            border: none !important; box-shadow: 0 4px 16px rgba(124,106,239,0.25) !important;
-        }
-        .stButton > button[kind="primary"]:hover { box-shadow: 0 6px 24px rgba(124,106,239,0.4) !important; }
-        .stButton > button:disabled { opacity: 0.3 !important; transform: none !important; }
-
-        /* === FILE UPLOADER === */
-        div[data-testid="stFileUploader"] { border: 2px dashed rgba(124,106,239,0.2) !important; border-radius: 12px !important; background: rgba(124,106,239,0.02) !important; }
-        div[data-testid="stFileUploader"]:hover { border-color: rgba(124,106,239,0.45) !important; }
-
-        /* === EXPANDER === */
-        div[data-testid="stExpander"] { border: 1px solid rgba(255,255,255,0.05) !important; border-radius: 10px !important; background: rgba(17,17,48,0.5) !important; }
-        div[data-testid="stExpander"]:hover { border-color: rgba(124,106,239,0.15) !important; }
-
-        /* === IMAGES === */
-        .stImage { border-radius: 10px !important; overflow: hidden; }
-
-        /* === DIVIDER === */
-        hr { border: none !important; border-top: 1px solid rgba(255,255,255,0.04) !important; }
-
-        /* === SCROLLBAR === */
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(124,106,239,0.2); border-radius: 3px; }
-
-        /* === KPI STRIP === */
-        .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
-        .kpi-card {
-            border-radius: 14px; padding: 20px 18px; text-align: center; color: #fff;
-            position: relative; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.3); transition: all 0.3s ease;
-        }
-        .kpi-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%); pointer-events: none; }
-        .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,0,0,0.4); }
-        .kpi-card .kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.8; margin-bottom: 6px; }
-        .kpi-card .kpi-value { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }
-
-        /* === FEATURE CARDS === */
-        .feat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-        .feat-card { background: rgba(17,17,48,0.5); border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 16px 12px; text-align: center; transition: all 0.3s ease; }
-        .feat-card:hover { border-color: rgba(124,106,239,0.2); background: rgba(17,17,48,0.7); }
-        .feat-icon { font-size: 26px; margin-bottom: 6px; }
-        .feat-title { font-weight: 700; font-size: 13px; color: #e0e0f0; }
-        .feat-sub { font-size: 11px; color: #6666aa; margin-top: 2px; }
-
-        /* === MODE BADGE === */
-        .mode-badge { text-align: center; padding: 10px; background: rgba(124,106,239,0.08); border: 1px solid rgba(124,106,239,0.12); border-radius: 10px; font-weight: 600; font-size: 0.85rem; color: #e0e0f0; }
-
-        /* === INFO BANNER === */
-        .info-banner { background: rgba(124,106,239,0.05); border: 1px solid rgba(124,106,239,0.1); border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; color: #9999bb; font-size: 0.9rem; }
-
-        /* === DOWNLOAD === */
-        div[data-testid="stDownloadButton"] > button { background: rgba(34,197,94,0.1) !important; color: #22c55e !important; border: 1px solid rgba(34,197,94,0.2) !important; border-radius: 10px !important; }
-        div[data-testid="stDownloadButton"] > button:hover { background: rgba(34,197,94,0.18) !important; }
-
-        /* === SLIDER === */
-        .stSlider [data-baseweb="thumb"] { background: #7c6aef !important; box-shadow: 0 0 8px rgba(124,106,239,0.4) !important; }
-
-        /* === CODE === */
-        div[data-testid="stCode"] { border-radius: 8px !important; border: 1px solid rgba(255,255,255,0.05) !important; }
-
-        /* === ANIMATION === */
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        .stApp { animation: fadeUp 0.4s ease-out; }
-        </style>
-        """
-    )
+    st.html(css)

@@ -1,439 +1,350 @@
-"""
-Advanced mode step-through pipeline engine.
+"""Advanced analysis pipeline — 8 steps with LaTeX formulas and visualizations.
 
-Renders an interactive step-by-step walkthrough of the image comparison
-pipeline with LaTeX formulas and intermediate visualizations.
+Each step computes metrics and renders matplotlib charts inside Streamlit
+expanders. All helpers are inlined to avoid Streamlit module-cache issues.
 """
-
-from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
 
-@dataclass
-class PipelineStep:
-    """A single step in the advanced analysis pipeline.
+# ── Dark-theme matplotlib helpers ───────────────────────────────────
+_DARK_BG = "#111118"
+_DARK_FG = "#e8e8ec"
+_DARK_GRID = "#2a2a35"
 
-    Attributes:
-        number: Step number (1-based).
-        title: Human-readable step title.
-        formula_latex: LaTeX formula string for this step.
-        description: Short description of what this step does.
-    """
+def _dark_fig(w=10, h=5):
+    fig = plt.figure(figsize=(w, h), facecolor=_DARK_BG)
+    return fig
 
-    number: int
-    title: str
-    formula_latex: str
-    description: str
+def _dark_ax(ax, title=None):
+    ax.set_facecolor(_DARK_BG)
+    ax.tick_params(colors=_DARK_FG, labelsize=9)
+    for spine in ax.spines.values():
+        spine.set_color(_DARK_GRID)
+    if title:
+        ax.set_title(title, color=_DARK_FG, fontsize=11, fontweight=600, pad=10)
 
 
-# ---------------------------------------------------------------------------
-# Define the 8 pipeline steps
-# ---------------------------------------------------------------------------
-
-PIPELINE_STEPS: List[PipelineStep] = [
-    PipelineStep(
-        number=1,
-        title="Load & Preprocess",
-        formula_latex=r"""
-        A_{gray} = 0.299R + 0.587G + 0.114B, \quad
-        A_{norm} = \frac{A_{gray}}{255} \in [0, 1]
-        """,
-        description=(
-            "Load both images, convert to grayscale using the standard "
-            "luminance formula, and normalize pixel values to [0, 1]."
-        ),
-    ),
-    PipelineStep(
-        number=2,
-        title="Resize & Align",
-        formula_latex=r"""
-        A_{target} = \text{cv2.resize}(A, (W_{target}, H_{target}))
-        """,
-        description=(
-            "Resize image B to match image A's dimensions (or both to a "
-            "target size) using area interpolation for downscaling."
-        ),
-    ),
-    PipelineStep(
-        number=3,
-        title="Flatten to Vectors",
-        formula_latex=r"""
-        A \in \mathbb{R}^{m \times n} \longrightarrow \mathbf{a} \in \mathbb{R}^N, \quad N = m \times n
-        """,
-        description=(
-            "Reshape the 2D image matrix into a 1D vector in N-dimensional "
-            "pixel space for vector operations."
-        ),
-    ),
-    PipelineStep(
-        number=4,
-        title="Norm-Based Distances",
-        formula_latex=r"""
-        \|A - B\|_F = \sqrt{\sum_{i,j} |a_{ij} - b_{ij}|^2}, \quad
-        \|A - B\|_1 = \sum_{i,j} |a_{ij} - b_{ij}|, \quad
-        \|A - B\|_\infty = \max_{i,j} |a_{ij} - b_{ij}|
-        """,
-        description=(
-            "Compute pixel-wise divergence using Frobenius (L2), Manhattan (L1), "
-            "and Chebyshev (L-infinity) norms."
-        ),
-    ),
-    PipelineStep(
-        number=5,
-        title="Vector Space Geometry",
-        formula_latex=r"""
-        \cos(\theta) = \frac{\mathbf{a} \cdot \mathbf{b}}{\|\mathbf{a}\|_2 \|\mathbf{b}\|_2}
-        """,
-        description=(
-            "Measure the angle between image vectors in N-dimensional space. "
-            "Cosine similarity captures structural similarity regardless of "
-            "brightness/contrast scaling."
-        ),
-    ),
-    PipelineStep(
-        number=6,
-        title="SVD Analysis",
-        formula_latex=r"""
-        A = U \Sigma V^T, \quad
-        \text{Energy}_A = \sum_i \sigma_i^2
-        """,
-        description=(
-            "Decompose both images via Singular Value Decomposition. "
-            "Compare the distribution of singular values (energy spectra) "
-            "to assess structural feature similarity."
-        ),
-    ),
-    PipelineStep(
-        number=7,
-        title="Algorithmic Metrics",
-        formula_latex=r"""
-        \text{MSE} = \frac{1}{mn}\sum_{i,j}(a_{ij}-b_{ij})^2, \quad
-        \text{PSNR} = 10\log_{10}\!\left(\frac{\text{MAX}^2}{\text{MSE}}\right), \quad
-        \text{HI} = \sum_k \min(h_A^k, h_B^k)
-        """,
-        description=(
-            "Compute standard algorithmic metrics: Mean Squared Error, "
-            "Peak Signal-to-Noise Ratio, and Histogram Intersection."
-        ),
-    ),
-    PipelineStep(
-        number=8,
-        title="Summary Report",
-        formula_latex=r"""
-        \text{Report} = \{\text{All Metrics}\}
-        """,
-        description=(
-            "Compile all computed metrics into a comprehensive comparison "
-            "report available for export."
-        ),
-    ),
+# ── Step definitions ───────────────────────────────────────────────
+STEPS = [
+    {
+        "title": "Load & Preprocess",
+        "formula": "I_gray = 0.299·R + 0.587·G + 0.114·B  ,  I_norm = I / 255",
+        "desc": "Convert to grayscale and normalize to [0, 1].",
+    },
+    {
+        "title": "Resize & Align",
+        "formula": "I_resized = cv2.resize(I, (T, T), interpolation=INTER_AREA)",
+        "desc": "Resize both images to the target dimension for fair comparison.",
+    },
+    {
+        "title": "Flatten to Vectors",
+        "formula": "a = vec(A) ∈ ℝ^{n}  ,  n = T × T",
+        "desc": "Reshape 2D matrices into 1D vectors for linear algebra operations.",
+    },
+    {
+        "title": "Norm-Based Distances",
+        "formula": "‖A−B‖_F = √(Σᵢⱼ (aᵢⱼ−bᵢⱼ)²)  ,  L₁ = Σ|aᵢⱼ−bᵢⱼ|  ,  L∞ = max|aᵢⱼ−bᵢⱼ|",
+        "desc": "Compute Frobenius, L1, and L∞ norms of the difference matrix.",
+    },
+    {
+        "title": "Vector Space Geometry",
+        "formula": "cos(θ) = (a·b) / (‖a‖·‖b‖)",
+        "desc": "Measure the angle between image vectors in high-dimensional space.",
+    },
+    {
+        "title": "SVD Analysis",
+        "formula": "A = U Σ Vᵀ  ,  Energy = Σᵢ σᵢ²  ,  Ratio = Σᵢ₌₁ᴷ σᵢ² / Σ σᵢ²",
+        "desc": "Decompose images via SVD and compare singular value spectra.",
+    },
+    {
+        "title": "Algorithmic Metrics",
+        "formula": "MSE = (1/n)Σ(aᵢ−bᵢ)²  ,  PSNR = 10·log₁₀(MAX²/MSE)  ,  HI = Σ min(hₐ, h_b)",
+        "desc": "Compute pixel-level error metrics and histogram similarity.",
+    },
+    {
+        "title": "Summary Report",
+        "formula": "Complete metric comparison with all computed values",
+        "desc": "Aggregate all metrics into a unified comparison summary.",
+    },
 ]
 
 
-def _render_step_1(img_a: np.ndarray, img_b: np.ndarray) -> Dict[str, Any]:
-    """Render Step 1: Load & Preprocess."""
-    import streamlit as st
+def _render_formula(formula: str) -> None:
+    """Render a LaTeX formula in a styled box."""
+    st.html(f"""
+    <div class="formula-box">
+        <span style="font-family:'Courier New',monospace;font-size:0.85rem;color:#ccc">{formula}</span>
+    </div>
+    """)
+
+
+def _render_step_header(step_num: int, title: str) -> None:
+    """Render a step header with number badge."""
+    st.html(f"""
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+        <span class="step-number">{step_num}</span>
+        <span class="step-title">{title}</span>
+    </div>
+    """)
+
+
+# ── Step renderers ──────────────────────────────────────────────────
+
+def _render_step_1(img_a, img_b):
+    """Load & Preprocess — show grayscale images."""
+    _render_step_header(1, "Load & Preprocess")
+    _render_formula(STEPS[0]["formula"])
 
     col1, col2 = st.columns(2)
     with col1:
-        st.image(img_a, caption=f"Image A — shape: {img_a.shape}, dtype: {img_a.dtype}", clamp=True)
-        st.caption(f"Min: {img_a.min():.4f} | Max: {img_a.max():.4f} | Mean: {img_a.mean():.4f}")
+        st.image(img_a, caption="Image A (grayscale, normalized)", use_container_width=True)
     with col2:
-        st.image(img_b, caption=f"Image B — shape: {img_b.shape}, dtype: {img_b.dtype}", clamp=True)
-        st.caption(f"Min: {img_b.min():.4f} | Max: {img_b.max():.4f} | Mean: {img_b.mean():.4f}")
+        st.image(img_b, caption="Image B (grayscale, normalized)", use_container_width=True)
 
-    return {"height": img_a.shape[0], "width": img_a.shape[1]}
+    st.info(f"Image A: shape={img_a.shape}, dtype={img_a.dtype}, range=[{img_a.min():.3f}, {img_a.max():.3f}]")
+    st.info(f"Image B: shape={img_b.shape}, dtype={img_b.dtype}, range=[{img_b.min():.3f}, {img_b.max():.3f}]")
 
 
-def _render_step_2(
-    img_a: np.ndarray, img_b: np.ndarray, pair: Any
-) -> Dict[str, Any]:
-    """Render Step 2: Resize & Align."""
-    import streamlit as st
+def _render_step_2(img_a, img_b):
+    """Resize & Align — show aligned images."""
+    _render_step_header(2, "Resize & Align")
+    _render_formula(STEPS[1]["formula"])
 
-    st.info(
-        f"Image A: {pair.height}×{pair.width} | "
-        f"Image B resized to match."
-    )
+    st.info(f"Both images resized to {img_a.shape[0]}×{img_a.shape[1]} pixels")
 
     col1, col2 = st.columns(2)
     with col1:
-        st.image(img_a, caption=f"Resized A ({pair.height}×{pair.width})", clamp=True)
+        st.image(img_a, caption=f"Image A ({img_a.shape[0]}×{img_a.shape[1]})", use_container_width=True)
     with col2:
-        st.image(img_b, caption=f"Resized B ({pair.height}×{pair.width})", clamp=True)
-
-    return {"target_shape": (pair.height, pair.width)}
+        st.image(img_b, caption=f"Image B ({img_b.shape[0]}×{img_b.shape[1]})", use_container_width=True)
 
 
-def _render_step_3(pair: Any) -> Dict[str, Any]:
-    """Render Step 3: Flatten to Vectors."""
-    import streamlit as st
+def _render_step_3(img_a, img_b):
+    """Flatten to Vectors — show vector stats."""
+    _render_step_header(3, "Flatten to Vectors")
+    _render_formula(STEPS[2]["formula"])
 
-    vec_a = pair.vector_a
-    vec_b = pair.vector_b
+    vec_a = img_a.flatten()
+    vec_b = img_b.flatten()
 
-    st.code(
-        f"vector_a.shape = {vec_a.shape}\n"
-        f"vector_b.shape = {vec_b.shape}\n"
-        f"Total elements N = {vec_a.shape[0]:,}",
-        language="python",
-    )
-
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.caption("vector_a[:20]:")
-        st.code(f"{vec_a[:20]}", language="python")
+        st.metric("Vector A length", f"{len(vec_a):,}")
     with col2:
-        st.caption("vector_b[:20]:")
-        st.code(f"{vec_b[:20]}", language="python")
+        st.metric("Vector B length", f"{len(vec_b):,}")
+    with col3:
+        st.metric("‖a‖₂", f"{np.linalg.norm(vec_a):.2f}")
+    with col4:
+        st.metric("‖b‖₂", f"{np.linalg.norm(vec_b):.2f}")
 
-    return {"N": vec_a.shape[0]}
+    fig = _dark_fig(8, 3)
+    ax = fig.add_subplot(111)
+    _dark_ax(ax, "Vector Components (first 500)")
+    n = min(500, len(vec_a))
+    ax.plot(vec_a[:n], color="#666", linewidth=0.8, alpha=0.8, label="Vector A")
+    ax.plot(vec_b[:n], color="#aaa", linewidth=0.8, alpha=0.8, label="Vector B")
+    legend = ax.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
+    st.pyplot(fig)
+    plt.close(fig)
 
 
-def _render_step_4(img_a: np.ndarray, img_b: np.ndarray) -> Dict[str, Any]:
-    """Render Step 4: Norm-Based Distances."""
-    import streamlit as st
+def _render_step_4(img_a, img_b):
+    """Norm-Based Distances — compute and visualize norms."""
+    _render_step_header(4, "Norm-Based Distances")
+    _render_formula(STEPS[3]["formula"])
+
     from src.linalg_metrics import frobenius_norm, l1_norm, l_inf_norm
-    from src.algo_metrics import difference_image
-    import matplotlib.pyplot as plt
 
+    diff = img_a - img_b
     frob = frobenius_norm(img_a, img_b)
     l1 = l1_norm(img_a, img_b)
     linf = l_inf_norm(img_a, img_b)
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Frobenius (L2)", f"{frob:.6f}")
-    col2.metric("L1 (Manhattan)", f"{l1:.6f}")
-    col3.metric("L∞ (Chebyshev)", f"{linf:.6f}")
+    with col1:
+        st.metric("Frobenius Norm", f"{frob:.4f}")
+    with col2:
+        st.metric("L1 Norm", f"{l1:.2f}")
+    with col3:
+        st.metric("L∞ Norm", f"{linf:.6f}")
 
-    # Difference heatmap
-    diff = difference_image(img_a, img_b)
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-    im0 = axes[0].imshow(img_a, cmap="gray", vmin=0, vmax=1)
-    axes[0].set_title("Image A")
-    axes[0].axis("off")
-
-    im1 = axes[1].imshow(diff, cmap="hot", vmin=0, vmax=max(diff.max(), 1e-10))
-    axes[1].set_title("Difference Heatmap")
-    axes[1].axis("off")
-    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
-
-    fig.suptitle("Pixel-Level Differences", fontweight="bold")
-    fig.tight_layout()
+    fig = _dark_fig(8, 4)
+    ax = fig.add_subplot(111)
+    _dark_ax(ax, "Difference Distribution")
+    flat_diff = np.abs(diff).flatten()
+    flat_diff = flat_diff[flat_diff > 0] if np.any(flat_diff > 0) else flat_diff
+    ax.hist(flat_diff, bins=50, color="#555", edgecolor="#333", alpha=0.8)
+    ax.set_xlabel("|aᵢⱼ − bᵢⱼ|", color=_DARK_FG, fontsize=9)
+    ax.set_ylabel("Count", color=_DARK_FG, fontsize=9)
     st.pyplot(fig)
     plt.close(fig)
 
-    return {"frobenius": frob, "l1": l1, "l_inf": linf}
 
+def _render_step_5(img_a, img_b):
+    """Vector Space Geometry — cosine similarity."""
+    _render_step_header(5, "Vector Space Geometry")
+    _render_formula(STEPS[4]["formula"])
 
-def _render_step_5(pair: Any) -> Dict[str, Any]:
-    """Render Step 5: Vector Space Geometry."""
-    import streamlit as st
     from src.linalg_metrics import cosine_similarity
-    import matplotlib.pyplot as plt
 
-    cos_sim = cosine_similarity(pair.vector_a, pair.vector_b)
+    cos_sim = cosine_similarity(img_a.flatten(), img_b.flatten())
+    angle = np.degrees(np.arccos(np.clip(cos_sim, -1, 1)))
 
-    st.metric("Cosine Similarity", f"{cos_sim:.6f}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Cosine Similarity", f"{cos_sim:.6f}")
+    with col2:
+        st.metric("Angle (degrees)", f"{angle:.4f}°")
 
-    # Conceptual angle visualization
-    fig, ax = plt.subplots(figsize=(6, 4))
-
-    # Draw conceptual vectors in 2D
-    angle = np.arccos(np.clip(cos_sim, -1, 1))
-    ax.annotate(
-        "", xy=(1, 0), xytext=(0, 0),
-        arrowprops=dict(arrowstyle="->", color="blue", lw=2),
-    )
-    ax.annotate(
-        "", xy=(np.cos(angle), np.sin(angle)), xytext=(0, 0),
-        arrowprops=dict(arrowstyle="->", color="red", lw=2),
-    )
-
-    # Draw arc
-    theta = np.linspace(0, angle, 50)
-    ax.plot(np.cos(theta) * 0.3, np.sin(theta) * 0.3, "k--", alpha=0.5)
-    ax.text(0.35, angle / 2 * 0.3, f"θ = {np.degrees(angle):.1f}°", fontsize=10)
-
-    ax.set_xlim(-0.2, 1.2)
-    ax.set_ylim(-0.2, 1.2)
+    # Visualize as unit vectors on a circle (2D projection)
+    fig = _dark_fig(6, 6)
+    ax = fig.add_subplot(111)
+    _dark_ax(ax, "Vector Direction (2D Projection)")
+    theta_a = 0
+    theta_b = angle
+    ax.annotate("", xy=(np.cos(np.radians(theta_b)), np.sin(np.radians(theta_b))),
+                xytext=(np.cos(np.radians(theta_a)), np.sin(np.radians(theta_a))),
+                arrowprops=dict(arrowstyle="->", color="#888", lw=1.5))
+    circle = plt.Circle((0, 0), 1, fill=False, color=_DARK_GRID, linewidth=1)
+    ax.add_patch(circle)
+    ax.plot(1, 0, "o", color="#666", markersize=8, label="Vector A")
+    ax.plot(np.cos(np.radians(theta_b)), np.sin(np.radians(theta_b)), "o", color="#aaa", markersize=8, label="Vector B")
+    ax.set_xlim(-1.3, 1.3)
+    ax.set_ylim(-1.3, 1.3)
     ax.set_aspect("equal")
-    ax.grid(True, alpha=0.3)
-    ax.set_title(
-        f"Cosine Similarity = {cos_sim:.4f}\n"
-        f"θ = {np.degrees(angle):.1f}°",
-        fontweight="bold",
-    )
-    ax.legend(["Vector a", "Vector b"], loc="upper right")
+    ax.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def _render_step_6(img_a, img_b):
+    """SVD Analysis — singular values and energy."""
+    _render_step_header(6, "SVD Analysis")
+    _render_formula(STEPS[5]["formula"])
+
+    from src.linalg_metrics import svd_energy_comparison
+
+    result = svd_energy_comparison(img_a, img_b)
+    sv = result.singular_values
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Energy Ratio", f"{result.energy_ratio:.6f}")
+    with col2:
+        st.metric("Cosine Distance (SV)", f"{result.cosine_distance_sv:.6f}")
+    with col3:
+        st.metric("Top-K Cosine", f"{result.top_k_singular_cosine:.6f}")
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), facecolor=_DARK_BG)
+
+    _dark_ax(ax1, "Singular Values")
+    ax1.plot(range(1, len(sv) + 1), sv, color=_DARK_FG, linewidth=1.5, marker="o", markersize=3)
+
+    _dark_ax(ax2, "Cumulative Energy")
+    cum = np.cumsum(sv) / (np.sum(sv) + 1e-12)
+    ax2.fill_between(range(1, len(cum) + 1), cum, alpha=0.3, color="#666")
+    ax2.plot(range(1, len(cum) + 1), cum, color=_DARK_FG, linewidth=1.5)
+    ax2.set_ylabel("Energy", color=_DARK_FG, fontsize=9)
 
     fig.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
 
-    st.caption(
-        f"dot(a, b) = {np.dot(pair.vector_a, pair.vector_b):.4f} | "
-        f"||a||₂ = {np.linalg.norm(pair.vector_a):.4f} | "
-        f"||b||₂ = {np.linalg.norm(pair.vector_b):.4f}"
-    )
 
-    return {"cosine_similarity": cos_sim}
+def _render_step_7(img_a, img_b):
+    """Algorithmic Metrics — MSE, PSNR, histogram."""
+    _render_step_header(7, "Algorithmic Metrics")
+    _render_formula(STEPS[6]["formula"])
 
-
-def _render_step_6(
-    img_a: np.ndarray, img_b: np.ndarray, svd_result: Any
-) -> Dict[str, Any]:
-    """Render Step 6: SVD Analysis."""
-    import streamlit as st
-    import matplotlib.pyplot as plt
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Energy A", f"{svd_result.energy_a:.2f}")
-    col2.metric("Energy B", f"{svd_result.energy_b:.2f}")
-    col3.metric("Energy Ratio", f"{svd_result.energy_ratio:.4f}")
-    col4.metric("SV Cosine Dist", f"{svd_result.cosine_distance_sv:.6f}")
-
-    # SVD spectrum plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-
-    k = min(50, len(svd_result.singular_values_a), len(svd_result.singular_values_b))
-    indices = np.arange(1, k + 1)
-
-    ax1.plot(indices, svd_result.singular_values_a[:k], "b-o", markersize=2, label="A")
-    ax1.plot(indices, svd_result.singular_values_b[:k], "r-s", markersize=2, label="B")
-    ax1.set_xlabel("Index")
-    ax1.set_ylabel("Singular Value")
-    ax1.set_title("Singular Value Spectrum", fontweight="bold")
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-
-    # Cumulative energy
-    energy_a = np.cumsum(svd_result.singular_values_a[:k] ** 2)
-    energy_b = np.cumsum(svd_result.singular_values_b[:k] ** 2)
-    if energy_a[-1] > 0:
-        energy_a /= energy_a[-1]
-    if energy_b[-1] > 0:
-        energy_b /= energy_b[-1]
-
-    ax2.plot(indices, energy_a, "b-", linewidth=2, label="A")
-    ax2.plot(indices, energy_b, "r-", linewidth=2, label="B")
-    ax2.set_xlabel("Singular Values Used")
-    ax2.set_ylabel("Cumulative Energy")
-    ax2.set_title("Energy Distribution", fontweight="bold")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    ax2.set_ylim(0, 1.05)
-
-    fig.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
-
-    return {
-        "energy_a": svd_result.energy_a,
-        "energy_b": svd_result.energy_b,
-        "energy_ratio": svd_result.energy_ratio,
-    }
-
-
-def _render_step_7(img_a: np.ndarray, img_b: np.ndarray) -> Dict[str, Any]:
-    """Render Step 7: Algorithmic Metrics."""
-    import streamlit as st
-    from src.algo_metrics import mse, psnr, histogram_intersection, histogram_intersection_detailed
-    import matplotlib.pyplot as plt
+    from src.algo_metrics import mse, psnr, histogram_intersection
 
     mse_val = mse(img_a, img_b)
     psnr_val = psnr(img_a, img_b)
-    hi_val = histogram_intersection(img_a, img_b)
+    hist_int = histogram_intersection(img_a, img_b)
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("MSE", f"{mse_val:.6f}")
-    col2.metric("PSNR", f"{psnr_val:.2f} dB")
-    col3.metric("Histogram Intersection", f"{hi_val:.6f}")
+    with col1:
+        st.metric("MSE", f"{mse_val:.8f}")
+    with col2:
+        st.metric("PSNR", f"{psnr_val:.2f} dB" if psnr_val != float("inf") else "∞ dB")
+    with col3:
+        st.metric("Histogram Intersection", f"{hist_int:.6f}")
 
-    # Histogram comparison
-    hist_result = histogram_intersection_detailed(img_a, img_b)
-    bin_centers = (hist_result.bin_edges[:-1] + hist_result.bin_edges[1:]) / 2.0
+    from src.algo_metrics import histogram_intersection_detailed
+    hist_result = histogram_intersection_detailed(img_a, img_b, bins=64)
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.fill_between(bin_centers, hist_result.hist_a, alpha=0.3, color="blue", label="Image A")
-    ax.fill_between(bin_centers, hist_result.hist_b, alpha=0.3, color="red", label="Image B")
-    ax.plot(bin_centers, hist_result.hist_a, color="blue", linewidth=1)
-    ax.plot(bin_centers, hist_result.hist_b, color="red", linewidth=1)
-    ax.set_xlabel("Intensity (0-255)")
-    ax.set_ylabel("Normalized Frequency")
-    ax.set_title(
-        f"Intensity Histograms (Intersection = {hi_val:.4f})",
-        fontweight="bold",
-    )
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
+    fig = _dark_fig(8, 4)
+    ax = fig.add_subplot(111)
+    _dark_ax(ax, "Histogram Comparison")
+    edges = hist_result.edges
+    centers = (edges[:-1] + edges[1:]) / 2
+    ax.fill_between(centers, hist_result.histogram_a, alpha=0.4, color="#666", label="Image A")
+    ax.fill_between(centers, hist_result.histogram_b, alpha=0.4, color="#aaa", label="Image B")
+    ax.set_xlabel("Intensity", color=_DARK_FG, fontsize=9)
+    ax.set_ylabel("Density", color=_DARK_FG, fontsize=9)
+    legend = ax.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
     st.pyplot(fig)
     plt.close(fig)
 
-    return {"mse": mse_val, "psnr_db": psnr_val, "hist_intersection": hi_val}
 
+def _render_step_8(report):
+    """Summary Report — all metrics in a table."""
+    _render_step_header(8, "Summary Report")
 
-def _render_step_8(report: Any) -> Dict[str, Any]:
-    """Render Step 8: Summary Report."""
-    import streamlit as st
+    st.html("""
+    <div class="formula-box">
+        <span style="font-family:'Courier New',monospace;font-size:0.85rem;color:#ccc">
+            Comparison complete — all metrics aggregated below
+        </span>
+    </div>
+    """)
 
-    st.json(report.to_dict(), expanded=True)
+    import pandas as pd
 
-    return {"report_complete": True}
-
-
-def run_advanced_pipeline(
-    img_a: np.ndarray,
-    img_b: np.ndarray,
-    pair: Any,
-    report: Any,
-) -> None:
-    """Run the advanced step-through pipeline.
-
-    Renders 8 expandable steps, each with LaTeX formulas and
-    intermediate visualizations.
-
-    Args:
-        img_a: Preprocessed image A (H x W), float64.
-        img_b: Preprocessed image B (H x W), float64.
-        pair: ImagePair dataclass from the loader.
-        report: ComparisonReport from the comparator.
-    """
-    import streamlit as st
-
-    st.subheader("🔬 Advanced Analysis Pipeline")
-    st.caption("Click each step to expand and view detailed calculations.")
-
-    step_functions = [
-        lambda: _render_step_1(img_a, img_b),
-        lambda: _render_step_2(img_a, img_b, pair),
-        lambda: _render_step_3(pair),
-        lambda: _render_step_4(img_a, img_b),
-        lambda: _render_step_5(pair),
-        lambda: _render_step_6(img_a, img_b, report.svd),
-        lambda: _render_step_7(img_a, img_b),
-        lambda: _render_step_8(report),
+    rows = [
+        ("Frobenius Norm", f"{report.frobenius_norm:.6f}"),
+        ("Cosine Similarity", f"{report.cosine_similarity:.6f}"),
+        ("MSE", f"{report.mse:.8f}"),
+        ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB"),
+        ("L1 Norm", f"{report.l1_norm:.4f}"),
+        ("L∞ Norm", f"{report.l_inf_norm:.6f}"),
+        ("Histogram Intersection", f"{report.histogram_intersection:.6f}"),
+        ("SVD Energy Ratio", f"{report.svd_energy_ratio:.6f}"),
+        ("Cosine Distance (SV)", f"{report.cosine_distance_sv:.6f}"),
+        ("SVD Top-K Cosine", f"{report.top_k_singular_cosine:.6f}"),
     ]
 
-    for step, render_fn in zip(PIPELINE_STEPS, step_functions):
-        with st.expander(
-            f"**Step {step.number}: {step.title}**",
-            expanded=False,
-        ):
-            st.markdown(f"_{step.description}_")
-            st.latex(step.formula_latex)
+    df = pd.DataFrame(rows, columns=["Metric", "Value"])
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
-            with st.spinner(f"Computing Step {step.number}..."):
-                start = time.time()
-                result = render_fn()
-                elapsed = time.time() - start
+    st.json(report.to_dict(), expanded=False)
 
-            st.caption(f"⏱ Computed in {elapsed*1000:.1f} ms")
+
+# ── Pipeline runner ─────────────────────────────────────────────────
+
+def run_advanced_pipeline(img_a, img_b, pair, report):
+    """Execute the 8-step advanced analysis pipeline."""
+    steps = [
+        ("Step 1/8 — Load & Preprocess", lambda: _render_step_1(img_a, img_b)),
+        ("Step 2/8 — Resize & Align", lambda: _render_step_2(img_a, img_b)),
+        ("Step 3/8 — Flatten to Vectors", lambda: _render_step_3(img_a, img_b)),
+        ("Step 4/8 — Norm-Based Distances", lambda: _render_step_4(img_a, img_b)),
+        ("Step 5/8 — Vector Space Geometry", lambda: _render_step_5(img_a, img_b)),
+        ("Step 6/8 — SVD Analysis", lambda: _render_step_6(img_a, img_b)),
+        ("Step 7/8 — Algorithmic Metrics", lambda: _render_step_7(img_a, img_b)),
+        ("Step 8/8 — Summary Report", lambda: _render_step_8(report)),
+    ]
+
+    for label, renderer in steps:
+        with st.expander(label, expanded=True):
+            t0 = time.time()
+            renderer()
+            elapsed = time.time() - t0
+            st.caption(f"Computed in {elapsed:.3f}s")

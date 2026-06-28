@@ -1,128 +1,205 @@
-#!/usr/bin/env python3
-"""PicPicComparison — Basic Comparison (Dark, Fullscreen)"""
+"""Page 1 — Basic Comparison Results.
 
-from __future__ import annotations
-import io, sys
+Displays KPI strip, 8 metric cards, side-by-side images, difference heatmap,
+SVD spectrum, histogram comparison, and download buttons.
+All helper functions inlined to avoid Streamlit module-cache issues.
+"""
+
+import io
+import json
 from pathlib import Path
-import matplotlib.pyplot as plt, numpy as np, streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import streamlit as st
 
 from ui.styles import inject_custom_css
-from src.algo_metrics import difference_image, histogram_intersection_detailed
+
+st.set_page_config(page_title="Basic Comparison", page_icon="📊", layout="wide")
 inject_custom_css()
 
-def _kpi(metrics):
-    cols = st.columns(len(metrics))
-    for col, (label, (value, gradient)) in zip(cols, metrics.items()):
-        with col:
-            st.html(
-                f'<div class="kpi-card" style="background:{gradient};">'
-                f'<div class="kpi-label">{label}</div>'
-                f'<div class="kpi-value">{value}</div></div>'
-            )
-
-def _dark_fig(w=10,h=5):
-    fig = plt.figure(figsize=(w,h)); fig.patch.set_facecolor("#0b0b1e"); return fig
-
-def _dark_ax(ax):
-    ax.set_facecolor("#0b0b1e"); ax.tick_params(colors="#6666aa")
-    ax.title.set_color("#e0e0f0")
-    for s in ax.spines.values(): s.set_color("#1a1a44")
-
-# Guard
+# ── Guard ───────────────────────────────────────────────────────────
 if st.session_state.report is None:
-    st.warning("⚠️ No results yet. Upload images on the Home page.")
-    st.page_link("app.py", label="🏠 Home", icon="🏠"); st.stop()
+    st.warning("No comparison results yet. Run a comparison from the Home page first.")
+    st.stop()
 
-r = st.session_state.report
-img_a, img_b = st.session_state.img_a, st.session_state.img_b
+report = st.session_state.report
+img_a = st.session_state.img_a
+img_b = st.session_state.img_b
 
-# Header
-st.markdown(f'<div class="page-header"><h1>📊 Basic Comparison</h1><p>{r.path_a} vs {r.path_b} — {r.dimensions[0]}×{r.dimensions[1]}px</p></div>', unsafe_allow_html=True)
+# ── Header ──────────────────────────────────────────────────────────
+st.html("""
+<div class="page-header">
+    <h1>Basic Comparison</h1>
+    <p>Side-by-side image metrics and visualizations</p>
+</div>
+""")
 
-# KPI
-_kpi({
-    "Cosine Similarity": (f"{r.cosine_sim*100:.1f}%", "linear-gradient(135deg,#7c6aef,#a855f7)"),
-    "MSE": (f"{r.mse:.6f}", "linear-gradient(135deg,#ec4899,#f43f5e)"),
-    "PSNR": (f"{r.psnr_db:.1f} dB" if r.psnr_db!=float("inf") else "∞ dB", "linear-gradient(135deg,#06b6d4,#3b82f6)"),
-    "Frobenius (L2)": (f"{r.frobenius:.4f}", "linear-gradient(135deg,#22c55e,#10b981)"),
-})
 
-# Metrics grid
-st.markdown("### 📐 All Metrics")
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("Frobenius (L2)", f"{r.frobenius:.6f}")
-c2.metric("Cosine Similarity", f"{r.cosine_sim:.6f}")
-c3.metric("MSE", f"{r.mse:.8f}")
-c4.metric("PSNR", f"{r.psnr_db:.2f} dB" if r.psnr_db!=float("inf") else "∞ dB")
-c5,c6,c7,c8 = st.columns(4)
-c5.metric("L1 (Manhattan)", f"{r.l1:.4f}")
-c6.metric("L∞ (Chebyshev)", f"{r.l_inf:.6f}")
-c7.metric("Hist. Intersection", f"{r.hist_intersection:.6f}")
-c8.metric("SVD Energy Ratio", f"{r.svd.energy_ratio:.4f}")
+# ── Dark-theme matplotlib helpers ───────────────────────────────────
+_DARK_BG = "#111118"
+_DARK_FG = "#e8e8ec"
+_DARK_GRID = "#2a2a35"
 
-# Images
-st.markdown("---"); st.markdown("### 🖼️ Original Images")
-ca,cb = st.columns(2, gap="medium")
-with ca:
-    st.markdown(f'<div style="text-align:center;font-weight:600;color:#7c6aef;margin-bottom:8px;">📎 {r.path_a}</div>', unsafe_allow_html=True)
-    st.image(img_a, use_container_width=True, clamp=True)
-with cb:
-    st.markdown(f'<div style="text-align:center;font-weight:600;color:#a855f7;margin-bottom:8px;">📎 {r.path_b}</div>', unsafe_allow_html=True)
-    st.image(img_b, use_container_width=True, clamp=True)
+def _dark_fig(w=10, h=5):
+    fig = plt.figure(figsize=(w, h), facecolor=_DARK_BG)
+    return fig
 
-# Heatmap + SVD
-st.markdown("---")
-ch,cs = st.columns(2, gap="medium")
-with ch:
-    st.markdown("#### 🔥 Difference Heatmap")
-    diff = difference_image(img_a, img_b)
-    fig = _dark_fig(10,5); ax = fig.add_subplot(111); _dark_ax(ax)
-    im = ax.imshow(diff, cmap="magma", vmin=0, vmax=max(diff.max(),1e-10))
-    ax.set_title("Pixel Differences", fontweight="bold", fontsize=13); ax.axis("off")
-    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
-    cb.ax.yaxis.set_tick_params(color="#6666aa"); plt.setp(cb.ax.yaxis.get_ticklabels(), color="#6666aa")
-    st.pyplot(fig); plt.close(fig)
-    st.caption(f"Max: {diff.max():.4f} | Mean: {diff.mean():.6f} | Non-zero: {np.count_nonzero(diff):,}/{diff.size:,}")
-with cs:
-    st.markdown("#### 📈 SVD Spectrum")
-    from src.visualizer import plot_svd_spectrum
-    fig2 = plot_svd_spectrum(r.svd.singular_values_a, r.svd.singular_values_b, top_k=50)
-    fig2.patch.set_facecolor("#0b0b1e")
-    for a in fig2.get_axes(): _dark_ax(a)
-    st.pyplot(fig2); plt.close(fig2)
-    st.caption(f"Energy A: {r.svd.energy_a:.2f} | Energy B: {r.svd.energy_b:.2f}")
+def _dark_ax(ax, title=None):
+    ax.set_facecolor(_DARK_BG)
+    ax.tick_params(colors=_DARK_FG, labelsize=9)
+    for spine in ax.spines.values():
+        spine.set_color(_DARK_GRID)
+    if title:
+        ax.set_title(title, color=_DARK_FG, fontsize=11, fontweight=600, pad=10)
 
-# Histogram
-st.markdown("---"); st.markdown("#### 📊 Histogram Comparison")
-hr = histogram_intersection_detailed(img_a, img_b)
-bc = (hr.bin_edges[:-1]+hr.bin_edges[1:])/2.0
-fig3,ax3 = plt.subplots(figsize=(12,4)); _dark_ax(ax3)
-ax3.fill_between(bc, hr.hist_a, alpha=0.3, color="#7c6aef", label="Image A")
-ax3.fill_between(bc, hr.hist_b, alpha=0.3, color="#a855f7", label="Image B")
-ax3.plot(bc, hr.hist_a, color="#7c6aef", linewidth=1); ax3.plot(bc, hr.hist_b, color="#a855f7", linewidth=1)
-ax3.set_xlabel("Intensity (0-255)", color="#6666aa"); ax3.set_ylabel("Frequency", color="#6666aa")
-ax3.set_title(f"Intersection = {hr.intersection:.4f}", fontweight="bold")
-ax3.legend(facecolor="#111130", edgecolor="#1a1a44", labelcolor="#e0e0f0")
-fig3.patch.set_facecolor("#0b0b1e"); st.pyplot(fig3); plt.close(fig3)
 
-# Download
-st.markdown("---"); st.markdown("### 📥 Download")
-cd1,cd2 = st.columns(2)
-with cd1:
-    st.download_button("📄 Download Report (JSON)", r.to_json(indent=2), "comparison_report.json", "application/json", use_container_width=True)
-with cd2:
+# ── KPI strip ───────────────────────────────────────────────────────
+kpi_data = [
+    ("Cosine Similarity", f"{report.cosine_similarity:.4f}"),
+    ("MSE", f"{report.mse:.6f}"),
+    ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB"),
+    ("Frobenius", f"{report.frobenius_norm:.2f}"),
+]
+kpi_html = '<div class="kpi-strip">'
+for label, value in kpi_data:
+    kpi_html += f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div></div>'
+kpi_html += "</div>"
+st.html(kpi_html)
+
+
+# ── 8-metric grid ──────────────────────────────────────────────────
+metrics = [
+    ("Frobenius Norm", f"{report.frobenius_norm:.4f}"),
+    ("Cosine Similarity", f"{report.cosine_similarity:.6f}"),
+    ("MSE", f"{report.mse:.8f}"),
+    ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB"),
+    ("L1 Norm", f"{report.l1_norm:.2f}"),
+    ("L∞ Norm", f"{report.l_inf_norm:.6f}"),
+    ("Hist. Intersection", f"{report.histogram_intersection:.6f}"),
+    ("SVD Energy Ratio", f"{report.svd_energy_ratio:.6f}"),
+]
+
+grid_html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-bottom:2rem">'
+for name, value in metrics:
+    grid_html += f'''
+    <div class="metric-card">
+        <div class="metric-name">{name}</div>
+        <div class="metric-value">{value}</div>
+    </div>'''
+grid_html += "</div>"
+st.html(grid_html)
+
+
+# ── Side-by-side images ────────────────────────────────────────────
+st.markdown("#### Original Images")
+col1, col2 = st.columns(2)
+with col1:
+    st.image(img_a, caption="Image A", use_container_width=True)
+with col2:
+    st.image(img_b, caption="Image B", use_container_width=True)
+
+
+# ── Difference heatmap ─────────────────────────────────────────────
+st.markdown("#### Difference Heatmap")
+from src.algo_metrics import difference_image
+
+diff = difference_image(img_a, img_b)
+fig_heat = _dark_fig(8, 4)
+ax_heat = fig_heat.add_subplot(111)
+_dark_ax(ax_heat, "Absolute Difference")
+im = ax_heat.imshow(diff, cmap="magma", aspect="auto")
+fig_heat.colorbar(im, ax=ax_heat, fraction=0.046, pad=0.04)
+st.pyplot(fig_heat)
+plt.close(fig_heat)
+
+
+# ── SVD spectrum ───────────────────────────────────────────────────
+st.markdown("#### SVD Spectrum")
+from src.linalg_metrics import svd_energy_comparison
+
+svd_result = svd_energy_comparison(img_a, img_b)
+sv = svd_result.singular_values
+
+fig_svd = _dark_fig(8, 4)
+ax_svd = fig_svd.add_subplot(111)
+_dark_ax(ax_svd, "Singular Values & Cumulative Energy")
+
+ax_svd.plot(range(1, len(sv) + 1), sv, color=_DARK_FG, linewidth=1.5, marker="o", markersize=3)
+ax_svd.set_xlabel("Index", color=_DARK_FG, fontsize=9)
+ax_svd.set_ylabel("Singular Value", color=_DARK_FG, fontsize=9)
+
+ax2 = ax_svd.twinx()
+cum_energy = np.cumsum(sv) / (np.sum(sv) + 1e-12)
+ax2.plot(range(1, len(cum_energy) + 1), cum_energy, color="#888", linewidth=1.2, linestyle="--")
+ax2.set_ylabel("Cumulative Energy", color="#888", fontsize=9)
+ax2.tick_params(colors="#888", labelsize=9)
+ax2.spines["right"].set_color(_DARK_GRID)
+ax2.spines["left"].set_color(_DARK_GRID)
+
+st.pyplot(fig_svd)
+plt.close(fig_svd)
+
+
+# ── Histogram comparison ───────────────────────────────────────────
+st.markdown("#### Histogram Comparison")
+from src.algo_metrics import histogram_intersection_detailed
+
+hist_result = histogram_intersection_detailed(img_a, img_b, bins=64)
+
+fig_hist = _dark_fig(8, 4)
+ax_hist = fig_hist.add_subplot(111)
+_dark_ax(ax_hist, "Pixel Intensity Histograms")
+
+edges = hist_result.edges
+centers = (edges[:-1] + edges[1:]) / 2
+width = edges[1] - edges[0]
+ax_hist.fill_between(centers, hist_result.histogram_a, alpha=0.4, color="#666", label="Image A")
+ax_hist.fill_between(centers, hist_result.histogram_b, alpha=0.4, color="#aaa", label="Image B")
+ax_hist.set_xlabel("Intensity", color=_DARK_FG, fontsize=9)
+ax_hist.set_ylabel("Density", color=_DARK_FG, fontsize=9)
+legend = ax_hist.legend(framealpha=0.3, facecolor=_DARK_BG, edgecolor=_DARK_GRID, labelcolor=_DARK_FG)
+
+st.pyplot(fig_hist)
+plt.close(fig_hist)
+
+
+# ── Downloads ───────────────────────────────────────────────────────
+st.html('<div style="height:1rem"></div>')
+st.markdown("#### Download")
+
+col_dl1, col_dl2 = st.columns(2)
+with col_dl1:
+    st.download_button(
+        label="📄 JSON Report",
+        data=report.to_json(),
+        file_name="comparison_report.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+with col_dl2:
     from src.visualizer import plot_full_comparison
-    figd = plot_full_comparison(img_a, img_b, diff, r.svd.singular_values_a, r.svd.singular_values_b)
-    figd.patch.set_facecolor("#0b0b1e")
-    for a in figd.get_axes(): _dark_ax(a)
-    buf = io.BytesIO(); figd.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="#0b0b1e"); plt.close(figd)
-    st.download_button("🖼️ Download Dashboard (PNG)", buf.getvalue(), "dashboard.png", "image/png", use_container_width=True)
+    fig_full = plot_full_comparison(img_a, img_b, svd_result, hist_result)
+    buf = io.BytesIO()
+    fig_full.savefig(buf, format="png", dpi=150, facecolor=_DARK_BG, bbox_inches="tight")
+    plt.close(fig_full)
+    buf.seek(0)
+    st.download_button(
+        label="🖼️ Full Dashboard PNG",
+        data=buf.getvalue(),
+        file_name="full_dashboard.png",
+        mime="image/png",
+        use_container_width=True,
+    )
 
-st.markdown("")
-cn1,cn2 = st.columns(2)
-with cn1: st.page_link("pages/2_🔬_Advanced_Analysis.py", label="🔬 Advanced", icon="🔬")
-with cn2: st.page_link("pages/3_📥_Export_Results.py", label="📥 Export", icon="📥")
+
+# ── Navigation ──────────────────────────────────────────────────────
+st.html("""
+<div class="nav-links">
+    <a class="nav-link" href="/" target="_self">← Home</a>
+    <a class="nav-link" href="/Advanced_Analysis" target="_self">🔬 Advanced Analysis →</a>
+    <a class="nav-link" href="/Export_Results" target="_self">📥 Export Results →</a>
+</div>
+""")

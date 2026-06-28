@@ -1,116 +1,222 @@
-#!/usr/bin/env python3
-"""PicPicComparison — Home Page (Dark, Fullscreen)"""
+"""PicPicComparison — Home page.
 
-from __future__ import annotations
-import sys, tempfile, os
+Upload two images, configure comparison settings, and run the analysis.
+All helper functions are inlined here (not in ui/components) to avoid
+Streamlit module-cache issues.
+"""
+
+import tempfile
 from pathlib import Path
-import numpy as np, streamlit as st
-from PIL import Image
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+import numpy as np
+import streamlit as st
+from PIL import Image
 
 from ui.styles import inject_custom_css
 
-# --- Helpers (inlined to avoid module-cache issues) ---
-def _kpi(metrics):
-    cols = st.columns(len(metrics))
-    for col, (label, (value, gradient)) in zip(cols, metrics.items()):
-        with col:
-            st.html(
-                f'<div class="kpi-card" style="background:{gradient};">'
-                f'<div class="kpi-label">{label}</div>'
-                f'<div class="kpi-value">{value}</div></div>'
-            )
-
-def _features():
-    feats = [("📐","Linear Algebra","Frobenius, L1, Cosine, SVD"),
-             ("🧮","Algorithmic","MSE, PSNR, Histogram"),
-             ("🔬","Advanced","Patch-Cosine, PCA, NCC"),
-             ("📊","Visuals","Heatmaps, SVD, Histograms")]
-    cols = st.columns(4)
-    for col, (icon, title, sub) in zip(cols, feats):
-        with col:
-            st.html(
-                f'<div class="feat-card">'
-                f'<div class="feat-icon">{icon}</div>'
-                f'<div class="feat-title">{title}</div>'
-                f'<div class="feat-sub">{sub}</div>'
-                f'</div>'
-            )
-
-# --- Config ---
-st.set_page_config(page_title="PicPicComparison", page_icon="🔍", layout="wide", initial_sidebar_state="expanded")
+# ── Page config ─────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="PicPicComparison",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 inject_custom_css()
 
-for k,v in {"advanced_mode":False,"img_a":None,"img_b":None,"pair":None,"report":None}.items():
-    if k not in st.session_state: st.session_state[k] = v
+# ── Session state defaults ──────────────────────────────────────────
+for key, default in [
+    ("img_a", None),
+    ("img_b", None),
+    ("pair", None),
+    ("report", None),
+    ("advanced_mode", False),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# --- Sidebar ---
+
+# ── Sidebar ─────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⚙️ Settings")
-    advanced = st.toggle("🔬 Advanced Mode", value=st.session_state.advanced_mode, help="Step-by-step analysis.")
-    st.session_state.advanced_mode = advanced
-    st.markdown("---"); st.markdown("### 🎛️ Parameters")
-    resize_size = st.slider("Resize to (px)", 64, 1024, 256, 32)
-    svd_top_k = st.slider("SVD Top-K", 5, 100, 50, 5)
-    hist_bins = st.select_slider("Histogram Bins", [64,128,256,512], 256)
-    st.markdown("---")
-    st.markdown(f'<div class="mode-badge">Mode: {"🔬 Advanced" if advanced else "📊 Basic"}</div>', unsafe_allow_html=True)
+    st.html('<div style="margin-bottom:0.5rem"><span class="mode-badge"><span class="mode-badge-dot"></span> PicPicComparison v1.0</span></div>')
 
-# --- Header ---
-st.markdown('<div class="page-header"><h1>🔍 PicPicComparison</h1><p>Advanced Picture-to-Picture Comparison using Linear Algebra & Algorithmic Metrics</p></div>', unsafe_allow_html=True)
-_features()
+    st.markdown("### Settings")
 
-# --- Upload ---
-st.markdown("### 📤 Upload Images")
-col_a, col_b = st.columns(2, gap="large")
+    st.session_state.advanced_mode = st.toggle(
+        "Advanced Mode",
+        value=st.session_state.advanced_mode,
+        help="Enable the full 8-step analysis pipeline with LaTeX formulas",
+    )
+
+    target_size = st.slider(
+        "Resize to",
+        min_value=64,
+        max_value=1024,
+        value=256,
+        step=32,
+        help="Target dimension for comparison (square)",
+    )
+
+    svd_top_k = st.slider(
+        "SVD Top-K",
+        min_value=5,
+        max_value=100,
+        value=50,
+        step=5,
+        help="Number of top singular values for SVD energy analysis",
+    )
+
+    histogram_bins = st.select_slider(
+        "Histogram Bins",
+        options=[32, 64, 128, 256],
+        value=64,
+    )
+
+    st.divider()
+    st.markdown(
+        '<p style="color:#5a5a65;font-size:0.72rem;margin:0">Compare images using linear algebra & algorithmic metrics.</p>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── Header ──────────────────────────────────────────────────────────
+st.html("""
+<div class="page-header">
+    <h1>PicPicComparison</h1>
+    <p>Compare two images using linear algebra and algorithmic metrics</p>
+</div>
+""")
+
+
+# ── Upload section ──────────────────────────────────────────────────
+col_a, col_gap, col_b = st.columns([5, 1, 5])
+
 with col_a:
-    file_a = st.file_uploader("Image A", type=["png","jpg","jpeg","bmp","webp","tif","tiff"], key="upload_a")
+    file_a = st.file_uploader(
+        "Image A",
+        type=["png", "jpg", "jpeg", "bmp", "tiff", "webp"],
+        key="upload_a",
+        help="Upload the first image for comparison",
+    )
     if file_a:
-        file_a.seek(0); st.image(Image.open(file_a).convert("L"), caption=f"📎 {file_a.name}", use_container_width=True)
+        file_a.seek(0)
+        img_a_preview = Image.open(file_a).convert("L")
+        st.image(img_a_preview, caption="Image A", use_container_width=True)
+
 with col_b:
-    file_b = st.file_uploader("Image B", type=["png","jpg","jpeg","bmp","webp","tif","tiff"], key="upload_b")
+    file_b = st.file_uploader(
+        "Image B",
+        type=["png", "jpg", "jpeg", "bmp", "tiff", "webp"],
+        key="upload_b",
+        help="Upload the second image for comparison",
+    )
     if file_b:
-        file_b.seek(0); st.image(Image.open(file_b).convert("L"), caption=f"📎 {file_b.name}", use_container_width=True)
+        file_b.seek(0)
+        img_b_preview = Image.open(file_b).convert("L")
+        st.image(img_b_preview, caption="Image B", use_container_width=True)
 
-# --- Compare ---
-st.markdown("")
-c1,c2,c3 = st.columns([1,2,1])
-with c2:
-    if st.button("🚀 Compare Images", disabled=not(file_a and file_b), use_container_width=True, type="primary"):
-        progress = st.progress(0, "🔄 Loading...")
-        try:
-            tmp = tempfile.mkdtemp(prefix="picpic_")
-            pa,pb = os.path.join(tmp,"a.png"), os.path.join(tmp,"b.png")
-            file_a.seek(0); open(pa,"wb").write(file_a.read())
-            file_b.seek(0); open(pb,"wb").write(file_b.read())
-            progress.progress(20, "🔄 Preprocessing...")
-            from src.loader import load_image, resize_to_match, ImagePair, flatten_image
-            ia,ib = load_image(pa), load_image(pb)
-            ia,ib = resize_to_match(ia,ib,target_size=(resize_size,resize_size))
-            pair = ImagePair(ia,ib,flatten_image(ia),flatten_image(ib),ia.shape[0],ia.shape[1],file_a.name,file_b.name)
-            progress.progress(50, "🔄 Computing...")
-            from src.comparator import ImageComparator
-            report = ImageComparator(target_size=(resize_size,resize_size),svd_top_k=int(svd_top_k),histogram_bins=int(hist_bins)).compare_images(ia,ib)
-            progress.progress(80, "🔄 Finalizing...")
-            st.session_state.update(img_a=ia,img_b=ib,pair=pair,report=report)
-            progress.progress(100, "✅ Done!"); st.success("✅ Comparison complete!")
-        except Exception as e:
-            st.error(f"❌ {e}"); progress.empty()
+with col_gap:
+    st.html('<div style="display:flex;align-items:center;justify-content:center;height:100%;padding-top:3rem"><span style="color:#5a5a65;font-size:1.5rem">vs</span></div>')
 
-# --- Summary ---
-if st.session_state.report:
-    st.markdown("---"); st.markdown("### 📊 Quick Summary")
-    r = st.session_state.report
-    _kpi({
-        "Cosine Similarity": (f"{r.cosine_sim*100:.1f}%", "linear-gradient(135deg,#7c6aef,#a855f7)"),
-        "MSE": (f"{r.mse:.6f}", "linear-gradient(135deg,#ec4899,#f43f5e)"),
-        "PSNR": (f"{r.psnr_db:.1f} dB" if r.psnr_db!=float("inf") else "∞ dB", "linear-gradient(135deg,#06b6d4,#3b82f6)"),
-        "Frobenius": (f"{r.frobenius:.4f}", "linear-gradient(135deg,#22c55e,#10b981)"),
-    })
-    c1,c2,c3 = st.columns(3)
-    with c1: st.page_link("pages/1_📊_Basic_Comparison.py", label="📊 Basic Comparison", icon="📊")
-    with c2: st.page_link("pages/2_🔬_Advanced_Analysis.py", label="🔬 Advanced Analysis", icon="🔬")
-    with c3: st.page_link("pages/3_📥_Export_Results.py", label="📥 Export Results", icon="📥")
+
+# ── Compare button ──────────────────────────────────────────────────
+st.html('<div style="height:0.75rem"></div>')
+
+compare_clicked = st.button(
+    "Compare Images",
+    type="primary",
+    use_container_width=True,
+    disabled=not (file_a and file_b),
+)
+
+if compare_clicked:
+    with st.spinner("Loading and comparing images..."):
+        # Save uploads to temp files
+        tmp_dir = Path(tempfile.mkdtemp())
+        path_a = tmp_dir / "img_a.png"
+        path_b = tmp_dir / "img_b.png"
+
+        file_a.seek(0)
+        path_a.write_bytes(file_a.read())
+        file_b.seek(0)
+        path_b.write_bytes(file_b.read())
+
+        from src.loader import load_and_prepare_images
+        from src.comparator import ImageComparator
+
+        pair = load_and_prepare_images(
+            str(path_a), str(path_b), target_size=target_size
+        )
+
+        comparator = ImageComparator(
+            target_size=target_size,
+            svd_top_k=svd_top_k,
+            histogram_bins=histogram_bins,
+        )
+        report = comparator.compare_images(pair.image_a, pair.image_b)
+
+        st.session_state.img_a = pair.image_a
+        st.session_state.img_b = pair.image_b
+        st.session_state.pair = pair
+        st.session_state.report = report
+
+    st.toast("Comparison complete!", icon="✅")
+
+
+# ── Results preview ─────────────────────────────────────────────────
+if st.session_state.report is not None:
+    report = st.session_state.report
+
+    st.html('<div style="height:1rem"></div>')
+
+    # KPI strip
+    kpi_data = [
+        ("Cosine Similarity", f"{report.cosine_similarity:.4f}"),
+        ("MSE", f"{report.mse:.6f}"),
+        ("PSNR", f"{report.psnr:.2f} dB" if report.psnr != float("inf") else "∞ dB"),
+        ("Frobenius", f"{report.frobenius_norm:.2f}"),
+    ]
+
+    kpi_html = '<div class="kpi-strip">'
+    for label, value in kpi_data:
+        kpi_html += f'''
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">{value}</div>
+        </div>'''
+    kpi_html += "</div>"
+    st.html(kpi_html)
+
+    # Feature cards
+    st.html("""
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
+        <div class="feature-card">
+            <span class="feature-icon">📐</span>
+            <div class="feature-title">Linear Algebra</div>
+            <div class="feature-desc">Frobenius, L1, L∞, Cosine, SVD</div>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">⚙️</span>
+            <div class="feature-title">Algorithmic</div>
+            <div class="feature-desc">MSE, PSNR, Histogram Intersection</div>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🔬</span>
+            <div class="feature-title">Advanced</div>
+            <div class="feature-desc">Sobel, NCC, PCA, Patch Cosine</div>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">📊</span>
+            <div class="feature-title">Visualizations</div>
+            <div class="feature-desc">Heatmaps, SVD spectrum, Histograms</div>
+        </div>
+    </div>
+    """)
+
+    # Navigation links
+    st.html("""
+    <div class="nav-links">
+        <a class="nav-link" href="/Basic_Comparison" target="_self">📊 Basic Comparison</a>
+        <a class="nav-link" href="/Advanced_Analysis" target="_self">🔬 Advanced Analysis</a>
+        <a class="nav-link" href="/Export_Results" target="_self">📥 Export Results</a>
+    </div>
+    """)
