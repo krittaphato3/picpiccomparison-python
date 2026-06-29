@@ -5,7 +5,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-red?logo=streamlit)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-Advanced Picture-to-Picture Comparison using **Linear Algebra** and **Algorithmic** techniques.
+Advanced Picture-to-Picture Comparison using **Linear Algebra** and **Algorithmic** techniques from Linear Algebra Classes.
 
 Instead of relying on "black-box" ML models, PicPicComparison treats images as mathematical constructs (matrices and tensors) and applies matrix factorization, vector space geometry, and algorithmic analysis to quantify similarity.
 
